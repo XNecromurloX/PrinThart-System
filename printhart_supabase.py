@@ -6,6 +6,38 @@ import json
 import time
 from datetime import date
 
+# --- SISTEMA DE LOGIN ---
+USUARIOS = {
+    "Ainaht": "Thak9900",
+    "XNecromurlocX": "15203"
+}
+
+def login():
+    st.markdown("""
+        <div style='text-align: center; padding: 40px 0 10px 0;'>
+            <h1>🎨 PrinThart System</h1>
+            <p style='color: gray;'>Inicia sesión para continuar</p>
+        </div>
+    """, unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        usuario = st.text_input("👤 Usuario")
+        contrasena = st.text_input("🔒 Contraseña", type="password")
+        if st.button("Iniciar sesión", use_container_width=True):
+            if usuario in USUARIOS and USUARIOS[usuario] == contrasena:
+                st.session_state["autenticado"] = True
+                st.session_state["usuario_actual"] = usuario
+                st.rerun()
+            else:
+                st.error("❌ Usuario o contraseña incorrectos")
+
+if "autenticado" not in st.session_state:
+    st.session_state["autenticado"] = False
+
+if not st.session_state["autenticado"]:
+    login()
+    st.stop()
+
 # --- CONEXIÓN BASE DE DATOS SUPABASE (PostgreSQL) ---
 @st.cache_resource
 def get_connection():
@@ -136,6 +168,12 @@ lista_estados_todos = lista_estados + ["Entregado"]
 
 # --- MENÚ LATERAL ---
 st.sidebar.title("🎨 PrinThart System")
+st.sidebar.caption(f"👤 {st.session_state.get('usuario_actual', '')}")
+if st.sidebar.button("🚪 Cerrar sesión"):
+    st.session_state["autenticado"] = False
+    st.session_state["usuario_actual"] = ""
+    st.rerun()
+st.sidebar.divider()
 menu = st.sidebar.radio("Navegación", [
     "Entregas",
     "Nuevo pedido",
