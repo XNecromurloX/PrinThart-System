@@ -259,82 +259,124 @@ if menu == "Entregas":
             mostrar_feedback("advertencia", f"Pedido {id_eliminar} eliminado.")
 
 # ---------------------------------------------------------
-# NUEVO PEDIDO
+# NUEVO PEDIDO (con precios individuales por material)
 # ---------------------------------------------------------
 elif menu == "Nuevo pedido":
     st.title("📝 Registrar nuevo pedido")
     inventario_df = read_df("SELECT * FROM inventario")
     inventario_list = inventario_df['material'].tolist() if not inventario_df.empty else []
+    
     with st.form("frm_registro", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             fecha = st.date_input("Fecha", date.today(), key="fecha_ped_outf")
             cliente = st.text_input("Cliente *", key="cli_ped_outf")
-            detalle = st.text_area("Detalle del trabajo", height=80, key="det_ped_outf")
         with col2:
-            precio_unidad = st.number_input("Precio por unidad *", min_value=0, step=1, format="%d", key="ppu_ped_outf")
-            precio_total = precio_unidad
-            st.text_input("Precio total", value=f"{precio_total}", disabled=True, key="ptotal_ped_outf")
+            detalle = st.text_area("Detalle del trabajo", height=80, key="det_ped_outf")
             estado = st.selectbox("Estado", lista_estados, key="estado_ped_outf")
+        
         st.divider()
-        st.markdown("### Materiales utilizados")
+        st.markdown("### 📦 Materiales utilizados")
+        
         if "material_rows" not in st.session_state:
             st.session_state.material_rows = [0]
+        
         cols_acc = st.columns([1, 1])
         agregar_art = cols_acc[0].form_submit_button("+ Agregar artículo")
         quitar_art = False
         if len(st.session_state.material_rows) > 1:
             quitar_art = cols_acc[1].form_submit_button("- Quitar artículo")
+        
         if agregar_art:
             new_key = max(st.session_state.material_rows) + 1 if st.session_state.material_rows else 0
             st.session_state.material_rows.append(new_key)
         if quitar_art:
             st.session_state.material_rows.pop()
+        
         materiales_usados = []
         usados_ya = set()
+        precio_total_calculado = 0
+        cantidad_total_materiales = 0
+        
         for ix in st.session_state.material_rows:
-            cols_mat = st.columns([2, 1])
             opciones_disp = [m for m in inventario_list if m not in usados_ya]
-            if not opciones_disp: opciones_disp = inventario_list
+            if not opciones_disp: 
+                opciones_disp = inventario_list if inventario_list else ["Sin materiales"]
+            
+            cols_mat = st.columns([2, 1, 1])
             with cols_mat[0]:
-                mat = st.selectbox("Selecciona artículo:", opciones_disp, key=f"mat_{ix}_OUTF")
-            if mat in usados_ya:
-                st.warning(f"Ya seleccionaste {mat} en este pedido. Elige otro.")
+                mat = st.selectbox(f"Material {ix+1}:", opciones_disp, key=f"mat_{ix}_OUTF")
+            
+            if mat == "Sin materiales" or mat in usados_ya:
+                if mat in usados_ya:
+                    st.warning(f"Ya seleccionaste {mat}")
                 continue
             else:
-                max_disp = int(inventario_df.loc[inventario_df['material'] == mat, 'cantidad'].iloc[0]) if mat in inventario_list else 1
+                mat_row = inventario_df[inventario_df['material'] == mat]
+                if not mat_row.empty:
+                    max_disp = int(mat_row['cantidad'].iloc[0])
+                    precio_venta_default = int(mat_row['precio_venta'].iloc[0])
+                else:
+                    max_disp = 0
+                    precio_venta_default = 0
+                
                 with cols_mat[1]:
-                    cant = st.number_input("Cantidad", min_value=1, max_value=max_disp, step=1, format="%d", key=f"cant_{ix}_OUTF")
-                materiales_usados.append({'material': mat, 'cantidad': int(cant)})
-                usados_ya.add(mat)
+                    if max_disp > 0:
+                        cant = st.number_input("Cantidad", min_value=1, max_value=max_disp, value=1, step=1, format="%d", key=f"cant_{ix}_OUTF")
+                    else:
+                        st.warning("Sin stock")
+                        cant = 0
+                
+                with cols_mat[2]:
+                    precio = st.number_input("Precio c/u", min_value=0, value=precio_venta_default, step=1, format="%d", key=f"precio_{ix}_OUTF")
+                
+                if cant > 0:
+                    materiales_usados.append({
+                        'material': mat,
+                        'cantidad': int(cant),
+                        'precio': int(precio)
+                    })
+                    usados_ya.add(mat)
+                    precio_total_calculado += int(cant) * int(precio)
+                    cantidad_total_materiales += int(cant)
+        
+        st.caption(f"💵 **Total del pedido: ${precio_total_calculado:,.0f}** ({cantidad_total_materiales} artículos)")
+        
         enviar = st.form_submit_button("✅ Guardar pedido")
         if enviar:
             errores = []
             if not cliente.strip():
                 errores.append("- Cliente obligatorio")
-            if int(precio_unidad) <= 0:
-                errores.append("- El precio por unidad debe ser mayor a 0")
+            if not materiales_usados:
+                errores.append("- Debes agregar al menos un material")
+            if precio_total_calculado <= 0:
+                errores.append("- El precio total debe ser mayor a 0")
+            
             for m in materiales_usados:
-                existen = inventario_df.loc[inventario_df['material'] == m['material'], 'cantidad'].iloc[0]
-                if m['cantidad'] <= 0:
-                    errores.append(f"- Debes usar al menos 1 unidad de {m['material']}")
-                if m['cantidad'] > existen:
-                    errores.append(f"- Stock insuficiente de {m['material']}")
+                mat_stock = inventario_df[inventario_df['material'] == m['material']]
+                if not mat_stock.empty:
+                    stock_actual = int(mat_stock['cantidad'].iloc[0])
+                    if m['cantidad'] > stock_actual:
+                        errores.append(f"- Stock insuficiente de {m['material']} (disponible: {stock_actual})")
+            
             if errores:
                 mostrar_feedback("error", "Corrige los siguientes errores:\n" + "\n".join(errores), tiempo=3)
             else:
                 mat_json = json.dumps(materiales_usados, ensure_ascii=False)
+                precio_promedio = precio_total_calculado // cantidad_total_materiales if cantidad_total_materiales > 0 else 0
+                
                 query_ok = safe_query(
                     "INSERT INTO pedidos (fecha, cliente, detalle, cantidad, precio_unidad, total, estado, materiales_usados) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
-                    (str(fecha), cliente.strip(), detalle.strip(), 1,
-                     int(precio_unidad), int(precio_total), estado, mat_json)
+                    (str(fecha), cliente.strip(), detalle.strip(), cantidad_total_materiales,
+                     precio_promedio, precio_total_calculado, estado, mat_json)
                 )
-                for m in materiales_usados:
-                    safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s",
-                               (int(m['cantidad']), m['material']))
+                
                 if query_ok:
+                    for m in materiales_usados:
+                        safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s",
+                                   (int(m['cantidad']), m['material']))
                     st.session_state.material_rows = [0]
-                    mostrar_feedback("exito", f"¡Pedido guardado con éxito y stock descontado!")
+                    mostrar_feedback("exito", f"¡Pedido guardado con éxito! Total: ${precio_total_calculado:,.0f}")
 
 # ---------------------------------------------------------
 # INVENTARIO
@@ -540,14 +582,14 @@ elif menu == "Estados":
             with st.form("frm_editar_pedido"):
                 nuevo_cliente = st.text_input("Cliente", value=pedido_editar['cliente'])
                 nuevo_detalle = st.text_area("Detalle del trabajo", value=pedido_editar['detalle'], height=80)
-                nuevo_precio = st.number_input("Precio por unidad", min_value=0, value=int(pedido_editar['precio_unidad']), step=1, format="%d")
-                nuevo_total = int(pedido_editar['cantidad']) * nuevo_precio
-                st.caption(f"💵 Total del pedido: ${nuevo_total:,.0f}")
+                nuevo_precio_total = st.number_input("Precio total", min_value=0, value=int(pedido_editar['total']), step=1, format="%d")
+                nuevo_precio_promedio = nuevo_precio_total // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
+                st.caption(f"💵 Precio promedio por unidad: ${nuevo_precio_promedio:,.0f}")
                 
                 if st.form_submit_button("💾 Guardar cambios"):
                     safe_query(
                         "UPDATE pedidos SET cliente = %s, detalle = %s, precio_unidad = %s, total = %s WHERE id = %s",
-                        (nuevo_cliente.strip(), nuevo_detalle.strip(), nuevo_precio, nuevo_total, int(id_editar))
+                        (nuevo_cliente.strip(), nuevo_detalle.strip(), nuevo_precio_promedio, nuevo_precio_total, int(id_editar))
                     )
                     mostrar_feedback("exito", f"Pedido {id_editar} actualizado correctamente.")
             
