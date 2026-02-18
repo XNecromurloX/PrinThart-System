@@ -390,6 +390,8 @@ elif menu == "Inventario":
 
     # --- VISUALIZACIÓN INVENTARIO ---
     inventario_df = read_df("SELECT * FROM inventario")
+    bajas_df = read_df("SELECT * FROM bajas_material")
+    
     if not inventario_df.empty:
         inventario_df['cantidad'] = inventario_df['cantidad'].astype(int)
         inventario_df['precio_compra'] = inventario_df['precio_compra'].astype(int)
@@ -397,11 +399,41 @@ elif menu == "Inventario":
         inventario_df['ganancia_unitaria'] = inventario_df['precio_venta'] - inventario_df['precio_compra']
         inventario_df['inversion_total'] = inventario_df['cantidad'] * inventario_df['precio_compra']
         inventario_df['ganancia_total'] = inventario_df['cantidad'] * inventario_df['ganancia_unitaria']
+        
+        # Calcular bajas por material
+        if not bajas_df.empty:
+            bajas_agrupadas = bajas_df.groupby('material').agg({
+                'cantidad': 'sum',
+                'costo_total': 'sum'
+            }).reset_index()
+            bajas_agrupadas.columns = ['material', 'cantidad_baja', 'costo_baja']
+            inventario_df = inventario_df.merge(bajas_agrupadas, on='material', how='left')
+        else:
+            inventario_df['cantidad_baja'] = 0
+            inventario_df['costo_baja'] = 0
+        
+        inventario_df['cantidad_baja'] = inventario_df['cantidad_baja'].fillna(0).astype(int)
+        inventario_df['costo_baja'] = inventario_df['costo_baja'].fillna(0).astype(int)
+        
         df_vista = inventario_df[['material', 'cantidad', 'detalle', 'precio_compra', 'precio_venta',
-                                   'ganancia_unitaria', 'inversion_total', 'ganancia_total']].copy()
+                                   'ganancia_unitaria', 'cantidad_baja', 'costo_baja', 
+                                   'inversion_total', 'ganancia_total']].copy()
         df_vista.columns = ['Material', 'Stock', 'Detalle', 'P. Compra', 'P. Venta',
-                             'Ganancia/Unidad', 'Inversión Total', 'Ganancia Total']
+                             'Ganancia/Unidad', 'Cantidad Baja', 'Costo Baja',
+                             'Inversión Total', 'Ganancia Total']
         st.dataframe(df_vista, use_container_width=True, hide_index=True)
+        
+        # --- RESUMEN FINANCIERO DEL INVENTARIO ---
+        st.divider()
+        st.subheader("💰 Resumen Financiero del Inventario")
+        inversion_total_inv = inventario_df['inversion_total'].sum()
+        ganancia_potencial = inventario_df['ganancia_total'].sum()
+        perdidas_bajas = inventario_df['costo_baja'].sum()
+        
+        col1, col2, col3 = st.columns(3)
+        with col1: st.metric("💵 Inversión Total", f"${inversion_total_inv:,.0f}")
+        with col2: st.metric("📈 Ganancia Potencial", f"${ganancia_potencial:,.0f}")
+        with col3: st.metric("🗑️ Pérdidas por Bajas", f"${perdidas_bajas:,.0f}")
         st.divider()
         st.subheader("✏️ Editar material")
         mat_editar = st.selectbox("Selecciona material a editar:", inventario_df['material'].unique(), key="edit_mat")
@@ -499,6 +531,26 @@ elif menu == "Estados":
             if st.button("Cambiar estado de este pedido", key="btn_estado_cambio"):
                 safe_query("UPDATE pedidos SET estado = %s WHERE id = %s", (nuevo_estado, int(id_cambiar)))
                 mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}'.")
+            
+            st.divider()
+            st.subheader("✏️ Editar pedido")
+            id_editar = st.selectbox("Selecciona ID de pedido para editar:", df_est["id"], key="estado_edit")
+            pedido_editar = df_est[df_est["id"] == id_editar].iloc[0]
+            
+            with st.form("frm_editar_pedido"):
+                nuevo_cliente = st.text_input("Cliente", value=pedido_editar['cliente'])
+                nuevo_detalle = st.text_area("Detalle del trabajo", value=pedido_editar['detalle'], height=80)
+                nuevo_precio = st.number_input("Precio por unidad", min_value=0, value=int(pedido_editar['precio_unidad']), step=1, format="%d")
+                nuevo_total = int(pedido_editar['cantidad']) * nuevo_precio
+                st.caption(f"💵 Total del pedido: ${nuevo_total:,.0f}")
+                
+                if st.form_submit_button("💾 Guardar cambios"):
+                    safe_query(
+                        "UPDATE pedidos SET cliente = %s, detalle = %s, precio_unidad = %s, total = %s WHERE id = %s",
+                        (nuevo_cliente.strip(), nuevo_detalle.strip(), nuevo_precio, nuevo_total, int(id_editar))
+                    )
+                    mostrar_feedback("exito", f"Pedido {id_editar} actualizado correctamente.")
+            
             st.divider()
             id_eliminar_estado = st.selectbox("Selecciona pedido a eliminar en este estado:", df_est["id"], key="del_estado")
             if st.button("🗑️ Eliminar pedido de este estado"):
