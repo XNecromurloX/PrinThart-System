@@ -264,7 +264,9 @@ if menu == "Entregas":
 elif menu == "Nuevo pedido":
     st.title("📝 Registrar nuevo pedido")
     inventario_df = read_df("SELECT * FROM inventario")
-    inventario_list = inventario_df['material'].tolist() if not inventario_df.empty else []
+    # Filtrar solo materiales con stock disponible
+    inventario_con_stock = inventario_df[inventario_df['cantidad'] > 0] if not inventario_df.empty else inventario_df
+    inventario_list = inventario_con_stock['material'].tolist() if not inventario_con_stock.empty else []
     
     with st.form("frm_registro", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -299,50 +301,45 @@ elif menu == "Nuevo pedido":
         cantidad_total_materiales = 0
         
         for ix in st.session_state.material_rows:
+            # Filtrar materiales: que no estén usados ya Y que tengan stock > 0
             opciones_disp = [m for m in inventario_list if m not in usados_ya]
-            if not opciones_disp: 
-                opciones_disp = inventario_list if inventario_list else ["Sin materiales"]
+            
+            if not opciones_disp:
+                st.info("No hay más materiales con stock disponible")
+                break
             
             cols_mat = st.columns([2, 1, 1])
             with cols_mat[0]:
                 mat = st.selectbox(f"Material {ix+1}:", opciones_disp, key=f"mat_{ix}_OUTF")
             
-            if mat == "Sin materiales" or mat in usados_ya:
-                if mat in usados_ya:
-                    st.warning(f"Ya seleccionaste {mat}")
-                continue
+            mat_row = inventario_con_stock[inventario_con_stock['material'] == mat]
+            if not mat_row.empty:
+                max_disp = int(mat_row['cantidad'].iloc[0])
+                precio_venta_default = int(mat_row['precio_venta'].iloc[0])
             else:
-                mat_row = inventario_df[inventario_df['material'] == mat]
-                if not mat_row.empty:
-                    max_disp = int(mat_row['cantidad'].iloc[0])
-                    precio_venta_default = int(mat_row['precio_venta'].iloc[0])
+                max_disp = 0
+                precio_venta_default = 0
+            
+            with cols_mat[1]:
+                if max_disp > 0:
+                    cant_key = f"cant_{ix}_OUTF_{mat}"
+                    cant = st.number_input("Cantidad", min_value=1, max_value=max_disp, step=1, format="%d", key=cant_key)
                 else:
-                    max_disp = 0
-                    precio_venta_default = 0
-                
-                with cols_mat[1]:
-                    if max_disp > 0:
-                        # Crear key único para evitar conflictos
-                        cant_key = f"cant_{ix}_OUTF_{mat}"
-                        cant = st.number_input("Cantidad", min_value=1, max_value=max_disp, step=1, format="%d", key=cant_key)
-                    else:
-                        st.warning("Sin stock")
-                        cant = 0
-                
-                with cols_mat[2]:
-                    # Crear key único para el precio también
-                    precio_key = f"precio_{ix}_OUTF_{mat}"
-                    precio = st.number_input("Precio c/u", min_value=0, value=precio_venta_default, step=1, format="%d", key=precio_key)
-                
-                if cant > 0:
-                    materiales_usados.append({
-                        'material': mat,
-                        'cantidad': int(cant),
-                        'precio': int(precio)
-                    })
-                    usados_ya.add(mat)
-                    precio_total_calculado += int(cant) * int(precio)
-                    cantidad_total_materiales += int(cant)
+                    cant = 0
+            
+            with cols_mat[2]:
+                precio_key = f"precio_{ix}_OUTF_{mat}"
+                precio = st.number_input("Precio c/u", min_value=0, value=precio_venta_default, step=1, format="%d", key=precio_key)
+            
+            if cant > 0:
+                materiales_usados.append({
+                    'material': mat,
+                    'cantidad': int(cant),
+                    'precio': int(precio)
+                })
+                usados_ya.add(mat)
+                precio_total_calculado += int(cant) * int(precio)
+                cantidad_total_materiales += int(cant)
         
         st.caption(f"💵 **Total del pedido: ${precio_total_calculado:,.0f}** ({cantidad_total_materiales} artículos)")
         
