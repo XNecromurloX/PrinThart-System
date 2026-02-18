@@ -322,13 +322,17 @@ elif menu == "Nuevo pedido":
                 
                 with cols_mat[1]:
                     if max_disp > 0:
-                        cant = st.number_input("Cantidad", min_value=1, max_value=max_disp, value=1, step=1, format="%d", key=f"cant_{ix}_OUTF")
+                        # Crear key único para evitar conflictos
+                        cant_key = f"cant_{ix}_OUTF_{mat}"
+                        cant = st.number_input("Cantidad", min_value=1, max_value=max_disp, step=1, format="%d", key=cant_key)
                     else:
                         st.warning("Sin stock")
                         cant = 0
                 
                 with cols_mat[2]:
-                    precio = st.number_input("Precio c/u", min_value=0, value=precio_venta_default, step=1, format="%d", key=f"precio_{ix}_OUTF")
+                    # Crear key único para el precio también
+                    precio_key = f"precio_{ix}_OUTF_{mat}"
+                    precio = st.number_input("Precio c/u", min_value=0, value=precio_venta_default, step=1, format="%d", key=precio_key)
                 
                 if cant > 0:
                     materiales_usados.append({
