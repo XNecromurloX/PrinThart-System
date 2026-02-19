@@ -65,7 +65,8 @@ def crear_tablas():
             precio_unidad REAL DEFAULT 0.0,
             total REAL,
             estado TEXT,
-            materiales_usados TEXT
+            materiales_usados TEXT,
+            pagado BOOLEAN DEFAULT FALSE
         )
     ''')
     cur.execute('''
@@ -101,6 +102,15 @@ def crear_tablas():
     cur.close()
 
 crear_tablas()
+
+# Migración: agregar columna 'pagado' si no existe
+try:
+    cur = get_cursor()
+    cur.execute("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS pagado BOOLEAN DEFAULT FALSE")
+    conn.commit()
+    cur.close()
+except:
+    pass
 
 # --- FUNCIÓN LEER DATOS ---
 def read_df(query, params=None):
@@ -224,10 +234,15 @@ if menu == "Entregas":
     if not df.empty:
         df['materiales_mostrados'] = df['materiales_usados'].apply(
             lambda x: ', '.join([f"{i['material']}({i['cantidad']})" for i in json.loads(x)]) if x else "")
-        df_orden = df[['id', 'estado', 'cantidad', 'precio_unidad', 'total', 'cliente', 'detalle', 'fecha', 'materiales_mostrados']]
+        # Asegurar que la columna pagado existe
+        if 'pagado' not in df.columns:
+            df['pagado'] = False
+        df['pagado_texto'] = df['pagado'].apply(lambda x: '✅ Pagado' if x else '❌ Sin pagar')
+        df_orden = df[['id', 'estado', 'cantidad', 'precio_unidad', 'total', 'cliente', 'detalle', 'fecha', 'pagado_texto', 'materiales_mostrados']]
         df_orden = df_orden.rename(columns={
             'id': 'ID', 'estado': 'Estado', 'cantidad': 'Cantidad',
             'precio_unidad': 'Precio x unidad', 'total': 'Precio total',
+            'pagado_texto': 'Pago',
             'materiales_mostrados': 'Artículos usados'
         })
         df_orden['Precio x unidad'] = df_orden['Precio x unidad'].astype(int)
@@ -236,6 +251,22 @@ if menu == "Entregas":
         st.download_button(label="⬇️ Descargar CSV entregas",
                            data=df_orden.to_csv(index=False).encode('utf-8'),
                            file_name='entregas.csv', mime='text/csv')
+        
+        st.divider()
+        st.subheader("💳 Marcar pago de pedido")
+        id_pago = st.selectbox("Selecciona ID de pedido:", df['id'].tolist(), key="id_pago")
+        pedido_selec = df[df['id'] == id_pago].iloc[0]
+        estado_actual = '✅ Pagado' if pedido_selec.get('pagado', False) else '❌ Sin pagar'
+        st.caption(f"Estado actual: {estado_actual}")
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("✅ Marcar como PAGADO"):
+                safe_query("UPDATE pedidos SET pagado = TRUE WHERE id = %s", (id_pago,))
+                mostrar_feedback("exito", f"Pedido {id_pago} marcado como PAGADO")
+        with col2:
+            if st.button("❌ Marcar como SIN PAGAR"):
+                safe_query("UPDATE pedidos SET pagado = FALSE WHERE id = %s", (id_pago,))
+                mostrar_feedback("advertencia", f"Pedido {id_pago} marcado como SIN PAGAR")
     else:
         st.info("No hay entregas completadas aún.")
 
@@ -414,13 +445,16 @@ elif menu == "Inventario":
 
     # --- REGISTRAR BAJA ---
     st.subheader("🗑️ Registrar baja de material")
-    if not inventario_df.empty:
-        mat_baja = st.selectbox("Material:", inventario_df['material'].tolist(), key='select_baja')
+    # Filtrar solo materiales con stock disponible
+    inventario_con_stock_baja = inventario_df[inventario_df['cantidad'] > 0]
+    if not inventario_con_stock_baja.empty:
+        mat_baja = st.selectbox("Material:", inventario_con_stock_baja['material'].tolist(), key='select_baja')
+        stock_disponible = int(inventario_con_stock_baja[inventario_con_stock_baja['material'] == mat_baja]['cantidad'].iloc[0])
         cant_baja = st.number_input("Cantidad a dar de baja:", min_value=1,
-                                    max_value=int(inventario_df[inventario_df['material'] == mat_baja]['cantidad']),
+                                    max_value=stock_disponible,
                                     value=1, step=1, key='cant_baja')
         motivo = st.text_input("Motivo (Ej: Daño, vencimiento, uso interno)", value="Daño", key='motivo_baja')
-        costo_unit = float(inventario_df[inventario_df['material'] == mat_baja]['precio_compra'].iloc[0])
+        costo_unit = float(inventario_con_stock_baja[inventario_con_stock_baja['material'] == mat_baja]['precio_compra'].iloc[0])
         fecha_baja = date.today().isoformat()
         if st.button("Registrar baja de material"):
             safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s", (cant_baja, mat_baja))
@@ -430,10 +464,15 @@ elif menu == "Inventario":
                 (mat_baja, cant_baja, fecha_baja, motivo, costo_unit, costo_total)
             )
             mostrar_feedback("exito", f"Baja registrada: {cant_baja} de {mat_baja} por '{motivo}'")
+    else:
+        st.info("No hay materiales con stock disponible para dar de baja")
 
     # --- VISUALIZACIÓN INVENTARIO ---
     inventario_df = read_df("SELECT * FROM inventario")
     bajas_df = read_df("SELECT * FROM bajas_material")
+    
+    # Checkbox para filtrar materiales con stock
+    mostrar_solo_con_stock = st.checkbox("📦 Mostrar solo materiales con stock disponible", value=False, key="filtro_stock")
     
     if not inventario_df.empty:
         inventario_df['cantidad'] = inventario_df['cantidad'].astype(int)
@@ -457,6 +496,10 @@ elif menu == "Inventario":
         
         inventario_df['cantidad_baja'] = inventario_df['cantidad_baja'].fillna(0).astype(int)
         inventario_df['costo_baja'] = inventario_df['costo_baja'].fillna(0).astype(int)
+        
+        # Aplicar filtro si está activado
+        if mostrar_solo_con_stock:
+            inventario_df = inventario_df[inventario_df['cantidad'] > 0]
         
         df_vista = inventario_df[['material', 'cantidad', 'detalle', 'precio_compra', 'precio_venta',
                                    'ganancia_unitaria', 'cantidad_baja', 'costo_baja', 
@@ -599,3 +642,4 @@ elif menu == "Estados":
             if st.button("🗑️ Eliminar pedido de este estado"):
                 safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar_estado),))
                 mostrar_feedback("advertencia", f"Pedido {id_eliminar_estado} eliminado.")
+                
