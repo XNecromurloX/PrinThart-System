@@ -698,16 +698,30 @@ elif menu == "Inventario":
             col1, col2 = st.columns(2)
             with col1:
                 st.subheader("✏️ Editar baja")
-                nuevo_motivo = st.text_input("Nuevo motivo:", value=baja_actual['motivo'], key="edit_motivo_baja")
-                nueva_cantidad = st.number_input("Nueva cantidad:", min_value=1, 
-                                                value=int(baja_actual['cantidad']), step=1, key="edit_cant_baja")
-                nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
-                st.caption(f"Costo total recalculado: ${nuevo_costo_total:,.2f}")
+                st.info(f"📊 **Valores actuales:**\n\n"
+                       f"• Material: {baja_actual['material']}\n\n"
+                       f"• Cantidad: {int(baja_actual['cantidad'])}\n\n"
+                       f"• Motivo: {baja_actual['motivo']}\n\n"
+                       f"• Costo total: ${baja_actual['costo_total']:.2f}")
+                
+                st.caption("⚠️ Solo completa los campos que quieras cambiar")
+                nuevo_motivo = st.text_input("Nuevo motivo (dejar vacío para no cambiar):", value="", placeholder=baja_actual['motivo'], key="edit_motivo_baja")
+                nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar):", min_value=0, 
+                                                value=0, step=1, key="edit_cant_baja")
+                
+                if nueva_cantidad > 0:
+                    nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
+                    st.caption(f"Costo total recalculado: ${nuevo_costo_total:,.2f}")
                 
                 if st.button("💾 Actualizar baja", key="btn_update_baja"):
+                    # Solo actualizar campos que no estén vacíos o en 0
+                    motivo_final = nuevo_motivo.strip() if nuevo_motivo.strip() else baja_actual['motivo']
+                    cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(baja_actual['cantidad'])
+                    costo_final = cantidad_final * float(baja_actual['costo_unitario'])
+                    
                     safe_query(
                         "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
-                        (nueva_cantidad, nuevo_motivo.strip(), nuevo_costo_total, baja_id_editar)
+                        (cantidad_final, motivo_final, costo_final, baja_id_editar)
                     )
                     mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
             
@@ -776,15 +790,31 @@ elif menu == "Inventario":
         st.subheader("✏️ Editar material")
         mat_editar = st.selectbox("Selecciona material a editar:", inventario_df['material'].unique(), key="edit_mat")
         mat_data = inventario_df[inventario_df['material'] == mat_editar].iloc[0]
+        
+        # Mostrar valores actuales
+        st.info(f"📊 **Valores actuales de '{mat_editar}':**\n\n"
+                f"• Cantidad: {int(mat_data['cantidad'])}\n\n"
+                f"• Detalle: {mat_data['detalle'] if mat_data['detalle'] else 'Sin detalle'}\n\n"
+                f"• Precio compra: ${int(mat_data['precio_compra'])}\n\n"
+                f"• Precio venta: ${int(mat_data['precio_venta'])}")
+        
         with st.form("frm_editar_material"):
-            nueva_cantidad = st.number_input("Nueva cantidad", min_value=0, value=int(mat_data['cantidad']), step=1, format="%d", key='upd_cant')
-            nuevo_detalle = st.text_area("Nuevo detalle", value=mat_data['detalle'] if mat_data['detalle'] else "", height=50, key='upd_detalle')
-            nuevo_precio_compra = st.number_input("Nuevo precio de compra", min_value=0, value=int(mat_data['precio_compra']), step=1, format="%d", key='upd_pc')
-            nuevo_precio_venta = st.number_input("Nuevo precio de venta", min_value=0, value=int(mat_data['precio_venta']), step=1, format="%d", key='upd_pv')
+            st.caption("⚠️ Solo completa los campos que quieras cambiar")
+            nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_cant')
+            nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=50, key='upd_detalle')
+            nuevo_precio_compra = st.number_input("Nuevo precio de compra (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pc')
+            nuevo_precio_venta = st.number_input("Nuevo precio de venta (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pv')
+            
             if st.form_submit_button("💾 Actualizar material"):
+                # Solo actualizar campos que no estén en 0 o vacíos
+                cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(mat_data['cantidad'])
+                detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else mat_data['detalle']
+                precio_c_final = nuevo_precio_compra if nuevo_precio_compra > 0 else int(mat_data['precio_compra'])
+                precio_v_final = nuevo_precio_venta if nuevo_precio_venta > 0 else int(mat_data['precio_venta'])
+                
                 safe_query(
                     "UPDATE inventario SET cantidad = %s, detalle = %s, precio_compra = %s, precio_venta = %s WHERE material = %s",
-                    (int(nueva_cantidad), nuevo_detalle.strip(), int(nuevo_precio_compra), int(nuevo_precio_venta), mat_editar)
+                    (cantidad_final, detalle_final, precio_c_final, precio_v_final, mat_editar)
                 )
                 mostrar_feedback("exito", f"Material '{mat_editar}' actualizado correctamente.")
         st.divider()
@@ -911,17 +941,33 @@ elif menu == "Estados":
             id_editar = st.selectbox("Selecciona ID de pedido para editar:", df_est["id"], key="estado_edit")
             pedido_editar = df_est[df_est["id"] == id_editar].iloc[0]
             
+            # Mostrar valores actuales
+            st.info(f"📊 **Valores actuales del pedido #{id_editar}:**\n\n"
+                   f"• Cliente: {pedido_editar['cliente']}\n\n"
+                   f"• Detalle: {pedido_editar['detalle']}\n\n"
+                   f"• Total: ${int(pedido_editar['total']):,.0f}\n\n"
+                   f"• Cantidad artículos: {int(pedido_editar['cantidad'])}")
+            
             with st.form("frm_editar_pedido"):
-                nuevo_cliente = st.text_input("Cliente", value=pedido_editar['cliente'])
-                nuevo_detalle = st.text_area("Detalle del trabajo", value=pedido_editar['detalle'], height=80)
-                nuevo_precio_total = st.number_input("Precio total", min_value=0, value=int(pedido_editar['total']), step=1, format="%d")
-                nuevo_precio_promedio = nuevo_precio_total // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
-                st.caption(f"💵 Precio promedio por unidad: ${nuevo_precio_promedio:,.0f}")
+                st.caption("⚠️ Solo completa los campos que quieras cambiar")
+                nuevo_cliente = st.text_input("Nuevo cliente (dejar vacío para no cambiar)", value="", placeholder=pedido_editar['cliente'])
+                nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=pedido_editar['detalle'], height=80)
+                nuevo_precio_total = st.number_input("Nuevo precio total (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d")
+                
+                if nuevo_precio_total > 0:
+                    nuevo_precio_promedio = nuevo_precio_total // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
+                    st.caption(f"💵 Precio promedio por unidad: ${nuevo_precio_promedio:,.0f}")
                 
                 if st.form_submit_button("💾 Guardar cambios"):
+                    # Solo actualizar campos que no estén vacíos o en 0
+                    cliente_final = nuevo_cliente.strip() if nuevo_cliente.strip() else pedido_editar['cliente']
+                    detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else pedido_editar['detalle']
+                    total_final = nuevo_precio_total if nuevo_precio_total > 0 else int(pedido_editar['total'])
+                    precio_promedio_final = total_final // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
+                    
                     safe_query(
                         "UPDATE pedidos SET cliente = %s, detalle = %s, precio_unidad = %s, total = %s WHERE id = %s",
-                        (nuevo_cliente.strip(), nuevo_detalle.strip(), nuevo_precio_promedio, nuevo_precio_total, int(id_editar))
+                        (cliente_final, detalle_final, precio_promedio_final, total_final, int(id_editar))
                     )
                     mostrar_feedback("exito", f"Pedido {id_editar} actualizado correctamente.")
             
