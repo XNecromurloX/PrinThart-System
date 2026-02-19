@@ -55,45 +55,62 @@ FONDOS_PREDEFINIDOS = {
     "blur_stats": "linear-gradient(135deg, rgba(30, 60, 114, 0.8) 0%, rgba(42, 82, 152, 0.8) 100%)",
 }
 
-# CSS para sidebar con fondo borroso
+# CSS para sidebar con fondo de mármol verde/azul
 sidebar_css = """
 <style>
     [data-testid="stSidebar"] {
-        background: linear-gradient(135deg, rgba(30, 60, 114, 0.95) 0%, rgba(42, 82, 152, 0.95) 100%);
-        backdrop-filter: blur(10px);
+        background: url('https://i.pinimg.com/736x/e5/50/ae/e550ae51d7dd5b40fa2f9c8dc2cc13e2.jpg');
+        background-size: cover;
+        background-position: center;
+        backdrop-filter: blur(2px);
+    }
+    [data-testid="stSidebar"]::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(20, 40, 80, 0.3);
+        pointer-events: none;
     }
     [data-testid="stSidebar"] * {
         color: white !important;
+        position: relative;
+        z-index: 1;
     }
 </style>
 """
 
 # CSS para fondo de página completa
-if st.session_state.fondo_activo != "default":
-    if st.session_state.fondo_activo == "custom" and st.session_state.fondo_url:
-        fondo_css = f"""
-        <style>
-            .stApp {{
-                background: url('{st.session_state.fondo_url}');
-                background-size: cover;
-                background-position: center;
-                background-attachment: fixed;
-            }}
-        </style>
-        """
-    else:
-        fondo_actual = FONDOS_PREDEFINIDOS.get(st.session_state.fondo_activo, "")
-        fondo_css = f"""
-        <style>
-            .stApp {{
-                background: {fondo_actual};
-                background-attachment: fixed;
-            }}
-        </style>
-        """
-    st.markdown(sidebar_css + fondo_css, unsafe_allow_html=True)
-else:
-    st.markdown(sidebar_css, unsafe_allow_html=True)
+def aplicar_fondos():
+    css_total = sidebar_css
+    if st.session_state.fondo_activo != "default":
+        if st.session_state.fondo_activo == "custom" and st.session_state.fondo_url:
+            css_total += f"""
+            <style>
+                .stApp {{
+                    background: url('{st.session_state.fondo_url}');
+                    background-size: cover;
+                    background-position: center;
+                    background-attachment: fixed;
+                }}
+            </style>
+            """
+        else:
+            fondo_actual = FONDOS_PREDEFINIDOS.get(st.session_state.fondo_activo, "")
+            if fondo_actual:
+                css_total += f"""
+                <style>
+                    .stApp {{
+                        background: {fondo_actual};
+                        background-attachment: fixed;
+                    }}
+                </style>
+                """
+    st.markdown(css_total, unsafe_allow_html=True)
+
+aplicar_fondos()
 
 # --- CONEXIÓN BASE DE DATOS SUPABASE (PostgreSQL) ---
 @st.cache_resource
@@ -123,7 +140,8 @@ def crear_tablas():
             total REAL,
             estado TEXT,
             materiales_usados TEXT,
-            pagado BOOLEAN DEFAULT FALSE
+            pagado BOOLEAN DEFAULT FALSE,
+            inventario_descontado BOOLEAN DEFAULT FALSE
         )
     ''')
     cur.execute('''
@@ -164,6 +182,15 @@ crear_tablas()
 try:
     cur = get_cursor()
     cur.execute("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS pagado BOOLEAN DEFAULT FALSE")
+    conn.commit()
+    cur.close()
+except:
+    pass
+
+# Migración: agregar columna 'inventario_descontado' si no existe
+try:
+    cur = get_cursor()
+    cur.execute("ALTER TABLE pedidos ADD COLUMN IF NOT EXISTS inventario_descontado BOOLEAN DEFAULT FALSE")
     conn.commit()
     cur.close()
 except:
@@ -231,6 +258,7 @@ def safe_query(query, params=None, many=False):
 
 # --- ESTADOS ---
 lista_estados = ["Por confirmar", "Sin diseñar", "Diseños listos", "Listos para entregar"]
+lista_estados_nuevo_pedido = ["Por confirmar", "Sin diseñar"]  # Solo para crear pedidos
 lista_estados_todos = lista_estados + ["Entregado"]
 
 # --- MENÚ LATERAL ---
@@ -417,7 +445,7 @@ elif menu == "Nuevo pedido":
     if "pedido_detalle" not in st.session_state:
         st.session_state.pedido_detalle = ""
     if "pedido_estado" not in st.session_state:
-        st.session_state.pedido_estado = lista_estados[0]
+        st.session_state.pedido_estado = lista_estados_nuevo_pedido[0]
     if "pedido_fecha" not in st.session_state:
         st.session_state.pedido_fecha = date.today()
     
@@ -428,7 +456,10 @@ elif menu == "Nuevo pedido":
         st.session_state.pedido_cliente = st.text_input("Cliente *", st.session_state.pedido_cliente, key="cli_ped_v2")
     with col2:
         st.session_state.pedido_detalle = st.text_area("Detalle del trabajo", st.session_state.pedido_detalle, height=80, key="det_ped_v2")
-        st.session_state.pedido_estado = st.selectbox("Estado", lista_estados, index=lista_estados.index(st.session_state.pedido_estado), key="estado_ped_v2")
+        # Usar lista_estados_nuevo_pedido (solo "Por confirmar" y "Sin diseñar")
+        if st.session_state.pedido_estado not in lista_estados_nuevo_pedido:
+            st.session_state.pedido_estado = lista_estados_nuevo_pedido[0]
+        st.session_state.pedido_estado = st.selectbox("Estado", lista_estados_nuevo_pedido, index=lista_estados_nuevo_pedido.index(st.session_state.pedido_estado), key="estado_ped_v2")
     
     st.divider()
     st.markdown("### 📦 Materiales utilizados")
@@ -569,23 +600,22 @@ elif menu == "Nuevo pedido":
             mat_json = json.dumps(materiales_usados, ensure_ascii=False)
             precio_promedio = precio_total_calculado // cantidad_total_materiales if cantidad_total_materiales > 0 else 0
             
+            # Guardar pedido SIN descontar inventario (se descontará al cambiar a "Listos para entregar")
             query_ok = safe_query(
-                "INSERT INTO pedidos (fecha, cliente, detalle, cantidad, precio_unidad, total, estado, materiales_usados, pagado) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                "INSERT INTO pedidos (fecha, cliente, detalle, cantidad, precio_unidad, total, estado, materiales_usados, pagado, inventario_descontado) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (str(st.session_state.pedido_fecha), st.session_state.pedido_cliente.strip(), 
                  st.session_state.pedido_detalle.strip(), cantidad_total_materiales,
-                 precio_promedio, precio_total_calculado, st.session_state.pedido_estado, mat_json, False)
+                 precio_promedio, precio_total_calculado, st.session_state.pedido_estado, mat_json, False, False)
             )
             
             if query_ok:
-                for m in materiales_usados:
-                    safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s",
-                               (int(m['cantidad']), m['material']))
+                # NO descontamos inventario aquí - se hará al cambiar estado a "Listos para entregar"
                 
                 # Limpiar session_state después de guardar
                 st.session_state.material_rows_v2 = [0]
                 st.session_state.pedido_cliente = ""
                 st.session_state.pedido_detalle = ""
-                st.session_state.pedido_estado = lista_estados[0]
+                st.session_state.pedido_estado = lista_estados_nuevo_pedido[0]
                 st.session_state.pedido_fecha = date.today()
                 
                 # Limpiar materiales
@@ -652,6 +682,42 @@ elif menu == "Inventario":
             mostrar_feedback("exito", f"Baja registrada: {cant_baja} de {mat_baja} por '{motivo}'")
     else:
         st.info("No hay materiales con stock disponible para dar de baja")
+    
+    # --- EDITAR/ELIMINAR BAJAS ---
+    st.divider()
+    bajas_df_edit = read_df("SELECT * FROM bajas_material")
+    if not bajas_df_edit.empty:
+        with st.expander("✏️ Editar o eliminar bajas registradas"):
+            st.dataframe(bajas_df_edit[['id', 'material', 'cantidad', 'fecha', 'motivo', 'costo_total']], 
+                        use_container_width=True, hide_index=True)
+            
+            baja_id_editar = st.selectbox("Selecciona ID de baja para editar/eliminar:", 
+                                         bajas_df_edit['id'].tolist(), key="baja_edit_select")
+            baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("✏️ Editar baja")
+                nuevo_motivo = st.text_input("Nuevo motivo:", value=baja_actual['motivo'], key="edit_motivo_baja")
+                nueva_cantidad = st.number_input("Nueva cantidad:", min_value=1, 
+                                                value=int(baja_actual['cantidad']), step=1, key="edit_cant_baja")
+                nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
+                st.caption(f"Costo total recalculado: ${nuevo_costo_total:,.2f}")
+                
+                if st.button("💾 Actualizar baja", key="btn_update_baja"):
+                    safe_query(
+                        "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
+                        (nueva_cantidad, nuevo_motivo.strip(), nuevo_costo_total, baja_id_editar)
+                    )
+                    mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
+            
+            with col2:
+                st.subheader("🗑️ Eliminar baja")
+                st.warning(f"⚠️ Vas a eliminar la baja de {baja_actual['material']}")
+                st.caption(f"Cantidad: {baja_actual['cantidad']} | Costo: ${baja_actual['costo_total']:.2f}")
+                if st.button("🗑️ Eliminar esta baja", key="btn_del_baja"):
+                    safe_query("DELETE FROM bajas_material WHERE id = %s", (baja_id_editar,))
+                    mostrar_feedback("advertencia", f"Baja {baja_id_editar} eliminada")
 
     # --- VISUALIZACIÓN INVENTARIO ---
     inventario_df = read_df("SELECT * FROM inventario")
@@ -795,14 +861,50 @@ elif menu == "Estados":
         st.dataframe(df_estado_view, use_container_width=True, hide_index=True)
         if not df_est.empty:
             st.divider()
+            st.subheader("💳 Marcar pago de pedido")
+            # Asegurar que columna pagado existe
+            if 'pagado' not in df_est.columns:
+                df_est['pagado'] = False
+            id_pago_estados = st.selectbox("Selecciona ID de pedido:", df_est['id'].tolist(), key="id_pago_estados")
+            pedido_pago = df_est[df_est['id'] == id_pago_estados].iloc[0]
+            estado_pago_actual = '✅ Pagado' if pedido_pago.get('pagado', False) else '❌ Sin pagar'
+            st.caption(f"Estado actual: {estado_pago_actual}")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Marcar como PAGADO", key="btn_pago_estados"):
+                    safe_query("UPDATE pedidos SET pagado = TRUE WHERE id = %s", (id_pago_estados,))
+                    mostrar_feedback("exito", f"Pedido {id_pago_estados} marcado como PAGADO")
+            with col2:
+                if st.button("❌ Marcar como SIN PAGAR", key="btn_no_pago_estados"):
+                    safe_query("UPDATE pedidos SET pagado = FALSE WHERE id = %s", (id_pago_estados,))
+                    mostrar_feedback("advertencia", f"Pedido {id_pago_estados} marcado como SIN PAGAR")
+            
+            st.divider()
             st.subheader("Cambiar estado de un pedido")
             id_cambiar = st.selectbox("Selecciona ID de pedido para cambiar estado:", df_est["id"], key="estado_change")
             nuevo_estado = st.selectbox(
                 "Nuevo estado:", [e for e in lista_estados_todos if e != estado_sel], key="estado_nuevo"
             )
             if st.button("Cambiar estado de este pedido", key="btn_estado_cambio"):
-                safe_query("UPDATE pedidos SET estado = %s WHERE id = %s", (nuevo_estado, int(id_cambiar)))
-                mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}'.")
+                # Obtener el pedido actual
+                pedido_actual = df_est[df_est["id"] == id_cambiar].iloc[0]
+                inventario_ya_descontado = pedido_actual.get('inventario_descontado', False)
+                
+                # Si cambia a "Listos para entregar" o "Entregado" Y el inventario NO ha sido descontado
+                if nuevo_estado in ["Listos para entregar", "Entregado"] and not inventario_ya_descontado:
+                    # Descontar inventario
+                    materiales = json.loads(pedido_actual['materiales_usados']) if pedido_actual['materiales_usados'] else []
+                    for m in materiales:
+                        safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s",
+                                   (int(m['cantidad']), m['material']))
+                    # Marcar como descontado
+                    safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = TRUE WHERE id = %s", 
+                               (nuevo_estado, int(id_cambiar)))
+                    mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}' e inventario descontado.")
+                else:
+                    # Solo cambiar el estado
+                    safe_query("UPDATE pedidos SET estado = %s WHERE id = %s", (nuevo_estado, int(id_cambiar)))
+                    mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}'.")
             
             st.divider()
             st.subheader("✏️ Editar pedido")
