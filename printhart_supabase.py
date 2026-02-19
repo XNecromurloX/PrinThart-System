@@ -246,8 +246,7 @@ menu = st.sidebar.radio("Navegación", [
     "Nuevo pedido",
     "Inventario",
     "Suplidores",
-    "Estados",
-    "Ajustes"
+    "Estados"
 ])
 
 # --- RESUMEN FINANCIERO PEQUEÑO EN SIDEBAR ---
@@ -280,6 +279,59 @@ st.sidebar.caption(f"🗑️ Baja: ${gastos_baja:,.0f}")
 st.sidebar.caption(f"🔹 Ganancia: ${ganancia_neta:,.0f}")
 st.sidebar.caption(f"📈 Margen: {margen_ganancia:.1f}%")
 st.sidebar.caption(f"📦 Entregas: {cantidad_pedidos}")
+
+# --- BOTÓN DE AJUSTES EN ESQUINA SUPERIOR DERECHA ---
+col_ajustes1, col_ajustes2 = st.columns([6, 1])
+with col_ajustes2:
+    with st.popover("⚙️", use_container_width=True):
+        st.markdown("### ⚙️ Ajustes")
+        st.caption("Personaliza tu aplicación")
+        
+        st.markdown("#### 🎨 Fondos Predefinidos")
+        
+        fondo_opciones = {
+            "🔲 Por defecto": "default",
+            "🔵 Azul": "gradient_blue",
+            "🌅 Sunset": "gradient_sunset",
+            "🌊 Océano": "gradient_ocean",
+            "🌲 Bosque": "gradient_forest",
+            "💜 Morado": "gradient_purple",
+            "📊 Blur": "blur_stats",
+        }
+        
+        seleccion = st.selectbox(
+            "Elige un fondo:",
+            list(fondo_opciones.keys()),
+            key="fondo_select_popup"
+        )
+        
+        if st.button("✅ Aplicar", key="btn_aplicar_fondo_popup", use_container_width=True):
+            st.session_state.fondo_activo = fondo_opciones[seleccion]
+            st.session_state.fondo_url = ""
+            st.rerun()
+        
+        st.divider()
+        st.markdown("#### 🔗 Fondo desde URL")
+        
+        url_fondo = st.text_input(
+            "URL de imagen:",
+            placeholder="https://...",
+            key="input_url_popup",
+            label_visibility="collapsed"
+        )
+        
+        if st.button("🔗 Aplicar URL", key="btn_url_popup", use_container_width=True):
+            if url_fondo.strip():
+                st.session_state.fondo_activo = "custom"
+                st.session_state.fondo_url = url_fondo.strip()
+                st.rerun()
+        
+        st.divider()
+        
+        if st.button("🔄 Restablecer", key="btn_reset_popup", use_container_width=True):
+            st.session_state.fondo_activo = "default"
+            st.session_state.fondo_url = ""
+            st.rerun()
 
 # ---------------------------------------------------------
 # ENTREGAS
@@ -776,83 +828,3 @@ elif menu == "Estados":
             if st.button("🗑️ Eliminar pedido de este estado"):
                 safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar_estado),))
                 mostrar_feedback("advertencia", f"Pedido {id_eliminar_estado} eliminado.")
-
-# ---------------------------------------------------------
-# AJUSTES - PERSONALIZACIÓN VISUAL
-# ---------------------------------------------------------
-elif menu == "Ajustes":
-    st.title("⚙️ Ajustes y Personalización")
-    
-    st.markdown("### 🎨 Fondos de Pantalla")
-    st.caption("Personaliza el fondo de tu aplicación")
-    
-    # Opciones de fondos predefinidos
-    col1, col2 = st.columns([1, 2])
-    
-    with col1:
-        st.subheader("Fondos Predefinidos")
-        
-        fondo_opciones = {
-            "🔲 Por defecto (sin fondo)": "default",
-            "🔵 Gradiente Azul": "gradient_blue",
-            "🌅 Gradiente Sunset": "gradient_sunset",
-            "🌊 Gradiente Océano": "gradient_ocean",
-            "🌲 Gradiente Bosque": "gradient_forest",
-            "💜 Gradiente Morado": "gradient_purple",
-            "📊 Estadísticas Borrosas": "blur_stats",
-        }
-        
-        seleccion = st.radio(
-            "Elige un fondo:",
-            list(fondo_opciones.keys()),
-            key="fondo_radio"
-        )
-        
-        if st.button("✅ Aplicar fondo seleccionado", key="btn_aplicar_fondo"):
-            st.session_state.fondo_activo = fondo_opciones[seleccion]
-            st.session_state.fondo_url = ""
-            st.rerun()
-    
-    with col2:
-        st.subheader("Fondo Personalizado (URL)")
-        st.caption("Usa una imagen desde internet")
-        
-        url_fondo = st.text_input(
-            "URL de la imagen:",
-            placeholder="https://ejemplo.com/imagen.jpg",
-            key="input_url_fondo"
-        )
-        
-        st.info("💡 **Tip:** Usa sitios como Unsplash, Pexels o sube tu imagen a Imgur")
-        
-        if st.button("🔗 Aplicar fondo desde URL", key="btn_aplicar_url"):
-            if url_fondo.strip():
-                st.session_state.fondo_activo = "custom"
-                st.session_state.fondo_url = url_fondo.strip()
-                st.rerun()
-            else:
-                st.warning("⚠️ Por favor ingresa una URL válida")
-        
-        if st.session_state.fondo_activo == "custom" and st.session_state.fondo_url:
-            st.success(f"✅ Fondo personalizado activo")
-            st.caption(f"URL: {st.session_state.fondo_url[:50]}...")
-    
-    st.divider()
-    
-    # Vista previa del fondo actual
-    st.subheader("🖼️ Fondo Actual")
-    if st.session_state.fondo_activo == "default":
-        st.info("📄 Sin fondo - Usando el tema por defecto")
-    elif st.session_state.fondo_activo == "custom":
-        st.success(f"🎨 Fondo personalizado desde URL")
-    else:
-        nombre_fondo = [k for k, v in fondo_opciones.items() if v == st.session_state.fondo_activo]
-        st.success(f"🎨 {nombre_fondo[0] if nombre_fondo else 'Fondo aplicado'}")
-    
-    st.divider()
-    
-    st.markdown("### 🔄 Restablecer")
-    if st.button("🔄 Volver al tema por defecto", key="btn_reset_fondo"):
-        st.session_state.fondo_activo = "default"
-        st.session_state.fondo_url = ""
-        st.rerun()
