@@ -82,35 +82,35 @@ sidebar_css = """
 </style>
 """
 
-# CSS para fondo de página completa
-def aplicar_fondos():
-    css_total = sidebar_css
-    if st.session_state.fondo_activo != "default":
-        if st.session_state.fondo_activo == "custom" and st.session_state.fondo_url:
-            css_total += f"""
+# Aplicar CSS del sidebar siempre
+st.markdown(sidebar_css, unsafe_allow_html=True)
+
+# CSS para fondo de página completa (si está activado)
+if st.session_state.fondo_activo != "default":
+    if st.session_state.fondo_activo == "custom" and st.session_state.fondo_url:
+        fondo_css = f"""
+        <style>
+            .stApp {{
+                background: url('{st.session_state.fondo_url}');
+                background-size: cover;
+                background-position: center;
+                background-attachment: fixed;
+            }}
+        </style>
+        """
+        st.markdown(fondo_css, unsafe_allow_html=True)
+    else:
+        fondo_actual = FONDOS_PREDEFINIDOS.get(st.session_state.fondo_activo, "")
+        if fondo_actual:
+            fondo_css = f"""
             <style>
                 .stApp {{
-                    background: url('{st.session_state.fondo_url}');
-                    background-size: cover;
-                    background-position: center;
+                    background: {fondo_actual};
                     background-attachment: fixed;
                 }}
             </style>
             """
-        else:
-            fondo_actual = FONDOS_PREDEFINIDOS.get(st.session_state.fondo_activo, "")
-            if fondo_actual:
-                css_total += f"""
-                <style>
-                    .stApp {{
-                        background: {fondo_actual};
-                        background-attachment: fixed;
-                    }}
-                </style>
-                """
-    st.markdown(css_total, unsafe_allow_html=True)
-
-aplicar_fondos()
+            st.markdown(fondo_css, unsafe_allow_html=True)
 
 # --- CONEXIÓN BASE DE DATOS SUPABASE (PostgreSQL) ---
 @st.cache_resource
