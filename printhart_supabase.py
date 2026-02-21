@@ -264,7 +264,7 @@ lista_estados_todos = lista_estados + ["Entregado"]
 
 # --- MENÚ LATERAL ---
 st.sidebar.title("🎨 PrinThart System")
-st.sidebar.caption(f"👤 {st.session_state.get('usuario_actual', '')}")
+st.sidebar.markdown(f"<small>👤 {st.session_state.get('usuario_actual', '')}</small>", unsafe_allow_html=True)
 if st.sidebar.button("🚪 Cerrar sesión"):
     st.session_state["autenticado"] = False
     st.session_state["usuario_actual"] = ""
@@ -302,12 +302,12 @@ ganancia_neta = ingresos_totales - costos_totales
 margen_ganancia = (ganancia_neta / ingresos_totales * 100) if ingresos_totales > 0 else 0
 
 st.sidebar.markdown("#### 📊 Finanza (entregas)")
-st.sidebar.caption(f"💰 Ingresos: ${ingresos_totales:,.0f}")
-st.sidebar.caption(f"🧾 Costos: ${costos_totales:,.0f}")
-st.sidebar.caption(f"🗑️ Baja: ${gastos_baja:,.0f}")
-st.sidebar.caption(f"🔹 Ganancia: ${ganancia_neta:,.0f}")
-st.sidebar.caption(f"📈 Margen: {margen_ganancia:.1f}%")
-st.sidebar.caption(f"📦 Entregas: {cantidad_pedidos}")
+st.sidebar.markdown(f"<small>💰 Ingresos: ${ingresos_totales:,.0f}</small>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<small>🧾 Costos: ${costos_totales:,.0f}</small>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<small>🗑️ Baja: ${gastos_baja:,.0f}</small>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<small>🔹 Ganancia: ${ganancia_neta:,.0f}</small>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<small>📈 Margen: {margen_ganancia:.1f}%</small>", unsafe_allow_html=True)
+st.sidebar.markdown(f"<small>📦 Entregas: {cantidad_pedidos}</small>", unsafe_allow_html=True)
 
 # --- BOTÓN DE AJUSTES EN ESQUINA SUPERIOR DERECHA ---
 col_ajustes1, col_ajustes2 = st.columns([6, 1])
