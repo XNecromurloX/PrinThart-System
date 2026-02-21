@@ -424,8 +424,24 @@ if menu == "Entregas":
         st.divider()
         id_eliminar = st.selectbox("Selecciona pedido entregado a eliminar:", df['id'], key="del_ped_ent")
         if st.button("🗑️ Eliminar pedido seleccionado", key="btn_del_ped_ent"):
+            # Obtener el pedido antes de eliminarlo
+            pedido_a_eliminar = df[df['id'] == id_eliminar].iloc[0]
+            inventario_descontado = pedido_a_eliminar.get('inventario_descontado', False)
+            
+            # Si el inventario fue descontado, devolverlo
+            if inventario_descontado:
+                materiales = json.loads(pedido_a_eliminar['materiales_usados']) if pedido_a_eliminar['materiales_usados'] else []
+                for m in materiales:
+                    safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
+                               (int(m['cantidad']), m['material']))
+            
+            # Eliminar el pedido
             safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar),))
-            mostrar_feedback("advertencia", f"Pedido {id_eliminar} eliminado.")
+            
+            if inventario_descontado:
+                mostrar_feedback("advertencia", f"Pedido {id_eliminar} eliminado e inventario repuesto.")
+            else:
+                mostrar_feedback("advertencia", f"Pedido {id_eliminar} eliminado.")
 
 # ---------------------------------------------------------
 # NUEVO PEDIDO (SIN FORMULARIO - TIEMPO REAL)
@@ -920,8 +936,11 @@ elif menu == "Estados":
                 pedido_actual = df_est[df_est["id"] == id_cambiar].iloc[0]
                 inventario_ya_descontado = pedido_actual.get('inventario_descontado', False)
                 
-                # Si cambia a "Listos para entregar" o "Entregado" Y el inventario NO ha sido descontado
-                if nuevo_estado in ["Listos para entregar", "Entregado"] and not inventario_ya_descontado:
+                # Estados que requieren inventario descontado
+                estados_con_descuento = ["Listos para entregar", "Entregado"]
+                
+                # CASO 1: Mover A un estado que requiere descuento (y aún no está descontado)
+                if nuevo_estado in estados_con_descuento and not inventario_ya_descontado:
                     # Descontar inventario
                     materiales = json.loads(pedido_actual['materiales_usados']) if pedido_actual['materiales_usados'] else []
                     for m in materiales:
@@ -931,6 +950,20 @@ elif menu == "Estados":
                     safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = TRUE WHERE id = %s", 
                                (nuevo_estado, int(id_cambiar)))
                     mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}' e inventario descontado.")
+                
+                # CASO 2: Mover DESDE un estado con descuento HACIA uno sin descuento (devolver inventario)
+                elif nuevo_estado not in estados_con_descuento and inventario_ya_descontado:
+                    # Devolver inventario
+                    materiales = json.loads(pedido_actual['materiales_usados']) if pedido_actual['materiales_usados'] else []
+                    for m in materiales:
+                        safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
+                                   (int(m['cantidad']), m['material']))
+                    # Marcar como NO descontado
+                    safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = FALSE WHERE id = %s", 
+                               (nuevo_estado, int(id_cambiar)))
+                    mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}' e inventario repuesto.")
+                
+                # CASO 3: Cambio de estado sin afectar inventario
                 else:
                     # Solo cambiar el estado
                     safe_query("UPDATE pedidos SET estado = %s WHERE id = %s", (nuevo_estado, int(id_cambiar)))
@@ -974,5 +1007,21 @@ elif menu == "Estados":
             st.divider()
             id_eliminar_estado = st.selectbox("Selecciona pedido a eliminar en este estado:", df_est["id"], key="del_estado")
             if st.button("🗑️ Eliminar pedido de este estado"):
+                # Obtener el pedido antes de eliminarlo
+                pedido_a_eliminar = df_est[df_est['id'] == id_eliminar_estado].iloc[0]
+                inventario_descontado = pedido_a_eliminar.get('inventario_descontado', False)
+                
+                # Si el inventario fue descontado, devolverlo
+                if inventario_descontado:
+                    materiales = json.loads(pedido_a_eliminar['materiales_usados']) if pedido_a_eliminar['materiales_usados'] else []
+                    for m in materiales:
+                        safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
+                                   (int(m['cantidad']), m['material']))
+                
+                # Eliminar el pedido
                 safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar_estado),))
-                mostrar_feedback("advertencia", f"Pedido {id_eliminar_estado} eliminado.")
+                
+                if inventario_descontado:
+                    mostrar_feedback("advertencia", f"Pedido {id_eliminar_estado} eliminado e inventario repuesto.")
+                else:
+                    mostrar_feedback("advertencia", f"Pedido {id_eliminar_estado} eliminado.")
