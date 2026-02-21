@@ -595,60 +595,58 @@ elif menu == "Nuevo pedido":
     st.divider()
     
     # Botón para guardar (sin formulario)
-    _btn_ped_disabled = (
-        not st.session_state.pedido_cliente.strip()
-        or not materiales_usados
-        or precio_total_calculado <= 0
-    )
-    if _btn_ped_disabled:
-        st.caption("⚠️ Completa el cliente y agrega al menos un artículo con precio para guardar.")
-    if st.button("✅ Guardar pedido", type="primary", key="btn_guardar_pedido_v2", disabled=_btn_ped_disabled):
-        errores = []
-        if not st.session_state.pedido_cliente.strip():
-            errores.append("- Cliente obligatorio")
-        if not materiales_usados:
-            errores.append("- Debes agregar al menos un material")
-        if precio_total_calculado <= 0:
-            errores.append("- El precio total debe ser mayor a 0")
-        
-        for m in materiales_usados:
-            mat_stock = inventario_df[inventario_df['material'] == m['material']]
-            if not mat_stock.empty:
-                stock_actual = int(mat_stock['cantidad'].iloc[0])
-                if m['cantidad'] > stock_actual:
-                    errores.append(f"- Stock insuficiente de {m['material']} (disponible: {stock_actual})")
-        
-        if errores:
-            mostrar_feedback("error", "Corrige los siguientes errores:\n" + "\n".join(errores), tiempo=3)
+    _faltan_ped = []
+    if not st.session_state.pedido_cliente.strip():
+        _faltan_ped.append("cliente")
+    if not materiales_usados:
+        _faltan_ped.append("al menos un artículo")
+    if precio_total_calculado <= 0:
+        _faltan_ped.append("precio mayor a 0")
+    if _faltan_ped:
+        st.caption(f"⚠️ Falta: {', '.join(_faltan_ped)}")
+    if st.button("✅ Guardar pedido", type="primary", key="btn_guardar_pedido_v2"):
+        if _faltan_ped:
+            mostrar_feedback("error", f"Completa los campos obligatorios: {', '.join(_faltan_ped)}")
         else:
-            mat_json = json.dumps(materiales_usados, ensure_ascii=False)
-            precio_promedio = precio_total_calculado // cantidad_total_materiales if cantidad_total_materiales > 0 else 0
-            
-            # Guardar pedido SIN descontar inventario (se descontará al cambiar a "Listos para entregar")
-            query_ok = safe_query(
-                "INSERT INTO pedidos (fecha, cliente, detalle, cantidad, precio_unidad, total, estado, materiales_usados, pagado, inventario_descontado) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                (str(st.session_state.pedido_fecha), st.session_state.pedido_cliente.strip(), 
-                 st.session_state.pedido_detalle.strip(), cantidad_total_materiales,
-                 precio_promedio, precio_total_calculado, st.session_state.pedido_estado, mat_json, False, False)
-            )
-            
-            if query_ok:
-                # NO descontamos inventario aquí - se hará al cambiar estado a "Listos para entregar"
+            # Verificar stock
+            errores_stock = []
+            for m in materiales_usados:
+                mat_stock = inventario_df[inventario_df['material'] == m['material']]
+                if not mat_stock.empty:
+                    stock_actual = int(mat_stock['cantidad'].iloc[0])
+                    if m['cantidad'] > stock_actual:
+                        errores_stock.append(f"- Stock insuficiente de {m['material']} (disponible: {stock_actual})")
+            if errores_stock:
+                mostrar_feedback("error", "Corrige los siguientes errores:\n" + "\n".join(errores_stock), tiempo=3)
+            else:
+                mat_json = json.dumps(materiales_usados, ensure_ascii=False)
+                precio_promedio = precio_total_calculado // cantidad_total_materiales if cantidad_total_materiales > 0 else 0
                 
-                # Limpiar session_state después de guardar
-                st.session_state.material_rows_v2 = [0]
-                st.session_state.pedido_cliente = ""
-                st.session_state.pedido_detalle = ""
-                st.session_state.pedido_estado = lista_estados_nuevo_pedido[0]
-                st.session_state.pedido_fecha = date.today()
+                # Guardar pedido SIN descontar inventario (se descontará al cambiar a "Listos para entregar")
+                query_ok = safe_query(
+                    "INSERT INTO pedidos (fecha, cliente, detalle, cantidad, precio_unidad, total, estado, materiales_usados, pagado, inventario_descontado) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                    (str(st.session_state.pedido_fecha), st.session_state.pedido_cliente.strip(), 
+                     st.session_state.pedido_detalle.strip(), cantidad_total_materiales,
+                     precio_promedio, precio_total_calculado, st.session_state.pedido_estado, mat_json, False, False)
+                )
                 
-                # Limpiar materiales
-                keys_to_delete = [k for k in st.session_state.keys() if k.startswith(('mat_sel_', 'cant_sel_', 'precio_sel_'))]
-                for k in keys_to_delete:
-                    del st.session_state[k]
-                
-                mostrar_feedback("exito", f"¡Pedido guardado con éxito! Total: ${precio_total_calculado:,.0f}")
-                st.rerun()
+                if query_ok:
+                    # NO descontamos inventario aquí - se hará al cambiar estado a "Listos para entregar"
+                    
+                    # Limpiar session_state después de guardar
+                    st.session_state.material_rows_v2 = [0]
+                    st.session_state.pedido_cliente = ""
+                    st.session_state.pedido_detalle = ""
+                    st.session_state.pedido_estado = lista_estados_nuevo_pedido[0]
+                    st.session_state.pedido_fecha = date.today()
+                    
+                    # Limpiar materiales
+                    keys_to_delete = [k for k in st.session_state.keys() if k.startswith(('mat_sel_', 'cant_sel_', 'precio_sel_'))]
+                    for k in keys_to_delete:
+                        del st.session_state[k]
+                    
+                    mostrar_feedback("exito", f"¡Pedido guardado con éxito! Total: ${precio_total_calculado:,.0f}")
+                    st.rerun()
 
 # ---------------------------------------------------------
 # INVENTARIO
@@ -658,13 +656,12 @@ elif menu == "Inventario":
     inventario_df = read_df("SELECT * FROM inventario")
     with st.expander("➕ Agregar material", expanded=False):
         with st.form("frm_inventario", clear_on_submit=True):
-            material = st.text_input("Nombre del material *", key="frm_inv_material")
+            material = st.text_input("Nombre del material *")
             cantidad = st.number_input("Cantidad *", min_value=0, step=1, format="%d")
             detalle = st.text_area("Detalle/Descripción (opcional)", height=50)
             precio_compra = st.number_input("Precio de compra (costo unitario) *", min_value=0, step=1, format="%d")
             precio_venta = st.number_input("Precio de venta (unitario) *", min_value=0, step=1, format="%d")
-            _mat_nombre_ok = bool(st.session_state.get("frm_inv_material", "").strip())
-            if st.form_submit_button("Guardar material", disabled=not _mat_nombre_ok):
+            if st.form_submit_button("Guardar material"):
                 errores = []
                 if not material.strip(): errores.append("- Nombre obligatorio")
                 if cantidad < 0: errores.append("- La cantidad debe ser al menos 0")
@@ -697,17 +694,19 @@ elif menu == "Inventario":
         motivo = st.text_input("Motivo (Ej: Daño, vencimiento, uso interno)", value="Daño", key='motivo_baja')
         costo_unit = float(inventario_con_stock_baja[inventario_con_stock_baja['material'] == mat_baja]['precio_compra'].iloc[0])
         fecha_baja = date.today().isoformat()
-        _btn_baja_disabled = not motivo.strip()
-        if _btn_baja_disabled:
+        if not motivo.strip():
             st.caption("⚠️ El motivo es obligatorio para registrar una baja.")
-        if st.button("Registrar baja de material", disabled=_btn_baja_disabled):
-            safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s", (cant_baja, mat_baja))
-            costo_total = costo_unit * cant_baja
-            safe_query(
-                "INSERT INTO bajas_material (material, cantidad, fecha, motivo, costo_unitario, costo_total) VALUES (%s, %s, %s, %s, %s, %s)",
-                (mat_baja, cant_baja, fecha_baja, motivo, costo_unit, costo_total)
-            )
-            mostrar_feedback("exito", f"Baja registrada: {cant_baja} de {mat_baja} por '{motivo}'")
+        if st.button("Registrar baja de material"):
+            if not motivo.strip():
+                mostrar_feedback("error", "El motivo es obligatorio.")
+            else:
+                safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s", (cant_baja, mat_baja))
+                costo_total = costo_unit * cant_baja
+                safe_query(
+                    "INSERT INTO bajas_material (material, cantidad, fecha, motivo, costo_unitario, costo_total) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (mat_baja, cant_baja, fecha_baja, motivo, costo_unit, costo_total)
+                )
+                mostrar_feedback("exito", f"Baja registrada: {cant_baja} de {mat_baja} por '{motivo}'")
     else:
         st.info("No hay materiales con stock disponible para dar de baja")
     
@@ -741,20 +740,23 @@ elif menu == "Inventario":
                     nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
                     st.caption(f"Costo total recalculado: ${nuevo_costo_total:,.2f}")
                 
-                _btn_upd_baja_disabled = not nuevo_motivo.strip() and nueva_cantidad == 0
-                if _btn_upd_baja_disabled:
+                _nada_baja = not nuevo_motivo.strip() and nueva_cantidad == 0
+                if _nada_baja:
                     st.caption("⚠️ Cambia al menos un campo para poder actualizar.")
-                if st.button("💾 Actualizar baja", key="btn_update_baja", disabled=_btn_upd_baja_disabled):
-                    # Solo actualizar campos que no estén vacíos o en 0
-                    motivo_final = nuevo_motivo.strip() if nuevo_motivo.strip() else baja_actual['motivo']
-                    cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(baja_actual['cantidad'])
-                    costo_final = cantidad_final * float(baja_actual['costo_unitario'])
-                    
-                    safe_query(
-                        "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
-                        (cantidad_final, motivo_final, costo_final, baja_id_editar)
-                    )
-                    mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
+                if st.button("💾 Actualizar baja", key="btn_update_baja"):
+                    if _nada_baja:
+                        mostrar_feedback("error", "No hay cambios que guardar.")
+                    else:
+                        # Solo actualizar campos que no estén vacíos o en 0
+                        motivo_final = nuevo_motivo.strip() if nuevo_motivo.strip() else baja_actual['motivo']
+                        cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(baja_actual['cantidad'])
+                        costo_final = cantidad_final * float(baja_actual['costo_unitario'])
+                        
+                        safe_query(
+                            "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
+                            (cantidad_final, motivo_final, costo_final, baja_id_editar)
+                        )
+                        mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
             
             with col2:
                 st.subheader("🗑️ Eliminar baja")
@@ -829,31 +831,29 @@ elif menu == "Inventario":
                 f"• Precio compra: ${int(mat_data['precio_compra'])}\n\n"
                 f"• Precio venta: ${int(mat_data['precio_venta'])}")
         
-        st.caption("⚠️ Solo completa los campos que quieras cambiar")
-        nueva_cantidad_mat = st.number_input("Nueva cantidad (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_cant')
-        nuevo_detalle_mat = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=50, key='upd_detalle')
-        nuevo_precio_compra_mat = st.number_input("Nuevo precio de compra (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pc')
-        nuevo_precio_venta_mat = st.number_input("Nuevo precio de venta (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pv')
-        
-        _btn_upd_mat_disabled = (
-            nueva_cantidad_mat == 0 and
-            not nuevo_detalle_mat.strip() and
-            nuevo_precio_compra_mat == 0 and
-            nuevo_precio_venta_mat == 0
-        )
-        if _btn_upd_mat_disabled:
-            st.caption("⚠️ Cambia al menos un campo para poder actualizar.")
-        if st.button("💾 Actualizar material", key="btn_upd_mat", disabled=_btn_upd_mat_disabled):
-            cantidad_final = nueva_cantidad_mat if nueva_cantidad_mat > 0 else int(mat_data['cantidad'])
-            detalle_final = nuevo_detalle_mat.strip() if nuevo_detalle_mat.strip() else mat_data['detalle']
-            precio_c_final = nuevo_precio_compra_mat if nuevo_precio_compra_mat > 0 else int(mat_data['precio_compra'])
-            precio_v_final = nuevo_precio_venta_mat if nuevo_precio_venta_mat > 0 else int(mat_data['precio_venta'])
+        with st.form("frm_editar_material"):
+            st.caption("⚠️ Solo completa los campos que quieras cambiar")
+            nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_cant')
+            nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=50, key='upd_detalle')
+            nuevo_precio_compra = st.number_input("Nuevo precio de compra (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pc')
+            nuevo_precio_venta = st.number_input("Nuevo precio de venta (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pv')
             
-            safe_query(
-                "UPDATE inventario SET cantidad = %s, detalle = %s, precio_compra = %s, precio_venta = %s WHERE material = %s",
-                (cantidad_final, detalle_final, precio_c_final, precio_v_final, mat_editar)
-            )
-            mostrar_feedback("exito", f"Material '{mat_editar}' actualizado correctamente.")
+            if st.form_submit_button("💾 Actualizar material"):
+                _nada_mat = (nueva_cantidad == 0 and not nuevo_detalle.strip() and nuevo_precio_compra == 0 and nuevo_precio_venta == 0)
+                if _nada_mat:
+                    mostrar_feedback("error", "No hay cambios que guardar. Deja los campos en 0 o vacío si no quieres cambiarlos.")
+                else:
+                    # Solo actualizar campos que no estén en 0 o vacíos
+                    cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(mat_data['cantidad'])
+                    detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else mat_data['detalle']
+                    precio_c_final = nuevo_precio_compra if nuevo_precio_compra > 0 else int(mat_data['precio_compra'])
+                    precio_v_final = nuevo_precio_venta if nuevo_precio_venta > 0 else int(mat_data['precio_venta'])
+                    
+                    safe_query(
+                        "UPDATE inventario SET cantidad = %s, detalle = %s, precio_compra = %s, precio_venta = %s WHERE material = %s",
+                        (cantidad_final, detalle_final, precio_c_final, precio_v_final, mat_editar)
+                    )
+                    mostrar_feedback("exito", f"Material '{mat_editar}' actualizado correctamente.")
         st.divider()
         mat_eliminar = st.selectbox("Selecciona material a eliminar:", inventario_df['material'].unique(), key="del_mat")
         if st.button("🗑️ Eliminar material"):
@@ -870,12 +870,11 @@ elif menu == "Suplidores":
     st.title("🤝 Lista de suplidores")
     with st.expander("➕ Registrar nuevo suplidor", expanded=True):
         with st.form("frm_suplidor", clear_on_submit=True):
-            nombre = st.text_input("Nombre de empresa/persona *", key="frm_sup_nombre")
+            nombre = st.text_input("Nombre de empresa/persona *")
             whatsapp = st.text_input("WhatsApp (opcional)")
             web = st.text_input("Tienda/página web (opcional)")
             producto = st.text_area("¿Qué se compra en este sitio?", height=70)
-            _nombre_sup_ok = bool(st.session_state.get("frm_sup_nombre", "").strip())
-            if st.form_submit_button("💾 Guardar suplidor", disabled=not _nombre_sup_ok):
+            if st.form_submit_button("💾 Guardar suplidor"):
                 errores = []
                 if not nombre.strip(): errores.append("- Nombre obligatorio")
                 if whatsapp.strip() and not whatsapp.strip().isdigit():
@@ -1003,33 +1002,32 @@ elif menu == "Estados":
                    f"• Total: ${int(pedido_editar['total']):,.0f}\n\n"
                    f"• Cantidad artículos: {int(pedido_editar['cantidad'])}")
             
-            st.caption("⚠️ Solo completa los campos que quieras cambiar")
-            nuevo_cliente_ed = st.text_input("Nuevo cliente (dejar vacío para no cambiar)", value="", placeholder=pedido_editar['cliente'], key="ed_cli")
-            nuevo_detalle_ed = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=pedido_editar['detalle'], height=80, key="ed_det")
-            nuevo_precio_total_ed = st.number_input("Nuevo precio total (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key="ed_precio")
-            
-            if nuevo_precio_total_ed > 0:
-                nuevo_precio_promedio_ed = nuevo_precio_total_ed // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
-                st.caption(f"💵 Precio promedio por unidad: ${nuevo_precio_promedio_ed:,.0f}")
-            
-            _btn_ed_ped_disabled = (
-                not nuevo_cliente_ed.strip() and
-                not nuevo_detalle_ed.strip() and
-                nuevo_precio_total_ed == 0
-            )
-            if _btn_ed_ped_disabled:
-                st.caption("⚠️ Cambia al menos un campo para poder guardar.")
-            if st.button("💾 Guardar cambios", key="btn_guardar_ed_ped", disabled=_btn_ed_ped_disabled):
-                cliente_final = nuevo_cliente_ed.strip() if nuevo_cliente_ed.strip() else pedido_editar['cliente']
-                detalle_final = nuevo_detalle_ed.strip() if nuevo_detalle_ed.strip() else pedido_editar['detalle']
-                total_final = nuevo_precio_total_ed if nuevo_precio_total_ed > 0 else int(pedido_editar['total'])
-                precio_promedio_final = total_final // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
+            with st.form("frm_editar_pedido"):
+                st.caption("⚠️ Solo completa los campos que quieras cambiar")
+                nuevo_cliente = st.text_input("Nuevo cliente (dejar vacío para no cambiar)", value="", placeholder=pedido_editar['cliente'])
+                nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=pedido_editar['detalle'], height=80)
+                nuevo_precio_total = st.number_input("Nuevo precio total (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d")
                 
-                safe_query(
-                    "UPDATE pedidos SET cliente = %s, detalle = %s, precio_unidad = %s, total = %s WHERE id = %s",
-                    (cliente_final, detalle_final, precio_promedio_final, total_final, int(id_editar))
-                )
-                mostrar_feedback("exito", f"Pedido {id_editar} actualizado correctamente.")
+                if nuevo_precio_total > 0:
+                    nuevo_precio_promedio = nuevo_precio_total // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
+                    st.caption(f"💵 Precio promedio por unidad: ${nuevo_precio_promedio:,.0f}")
+                
+                if st.form_submit_button("💾 Guardar cambios"):
+                    _nada_ped = (not nuevo_cliente.strip() and not nuevo_detalle.strip() and nuevo_precio_total == 0)
+                    if _nada_ped:
+                        mostrar_feedback("error", "No hay cambios que guardar. Deja los campos vacíos o en 0 si no quieres cambiarlos.")
+                    else:
+                        # Solo actualizar campos que no estén vacíos o en 0
+                        cliente_final = nuevo_cliente.strip() if nuevo_cliente.strip() else pedido_editar['cliente']
+                        detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else pedido_editar['detalle']
+                        total_final = nuevo_precio_total if nuevo_precio_total > 0 else int(pedido_editar['total'])
+                        precio_promedio_final = total_final // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
+                        
+                        safe_query(
+                            "UPDATE pedidos SET cliente = %s, detalle = %s, precio_unidad = %s, total = %s WHERE id = %s",
+                            (cliente_final, detalle_final, precio_promedio_final, total_final, int(id_editar))
+                        )
+                        mostrar_feedback("exito", f"Pedido {id_editar} actualizado correctamente.")
             
             st.divider()
             id_eliminar_estado = st.selectbox("Selecciona pedido a eliminar en este estado:", df_est["id"], key="del_estado")
