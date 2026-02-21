@@ -120,7 +120,6 @@ def get_connection():
 conn = get_connection()
 
 def get_cursor():
-    global conn
     try:
         conn.isolation_level  # chequea si sigue viva
     except Exception:
@@ -264,7 +263,7 @@ lista_estados_todos = lista_estados + ["Entregado"]
 
 # --- MENÚ LATERAL ---
 st.sidebar.title("🎨 PrinThart System")
-st.sidebar.markdown(f"<small>👤 {st.session_state.get('usuario_actual', '')}</small>", unsafe_allow_html=True)
+st.sidebar.caption(f"👤 {st.session_state.get('usuario_actual', '')}")
 if st.sidebar.button("🚪 Cerrar sesión"):
     st.session_state["autenticado"] = False
     st.session_state["usuario_actual"] = ""
@@ -302,12 +301,12 @@ ganancia_neta = ingresos_totales - costos_totales
 margen_ganancia = (ganancia_neta / ingresos_totales * 100) if ingresos_totales > 0 else 0
 
 st.sidebar.markdown("#### 📊 Finanza (entregas)")
-st.sidebar.markdown(f"<small>💰 Ingresos: ${ingresos_totales:,.0f}</small>", unsafe_allow_html=True)
-st.sidebar.markdown(f"<small>🧾 Costos: ${costos_totales:,.0f}</small>", unsafe_allow_html=True)
-st.sidebar.markdown(f"<small>🗑️ Baja: ${gastos_baja:,.0f}</small>", unsafe_allow_html=True)
-st.sidebar.markdown(f"<small>🔹 Ganancia: ${ganancia_neta:,.0f}</small>", unsafe_allow_html=True)
-st.sidebar.markdown(f"<small>📈 Margen: {margen_ganancia:.1f}%</small>", unsafe_allow_html=True)
-st.sidebar.markdown(f"<small>📦 Entregas: {cantidad_pedidos}</small>", unsafe_allow_html=True)
+st.sidebar.caption(f"💰 Ingresos: ${ingresos_totales:,.0f}")
+st.sidebar.caption(f"🧾 Costos: ${costos_totales:,.0f}")
+st.sidebar.caption(f"🗑️ Baja: ${gastos_baja:,.0f}")
+st.sidebar.caption(f"🔹 Ganancia: ${ganancia_neta:,.0f}")
+st.sidebar.caption(f"📈 Margen: {margen_ganancia:.1f}%")
+st.sidebar.caption(f"📦 Entregas: {cantidad_pedidos}")
 
 # --- BOTÓN DE AJUSTES EN ESQUINA SUPERIOR DERECHA ---
 col_ajustes1, col_ajustes2 = st.columns([6, 1])
@@ -433,11 +432,11 @@ if menu == "Entregas":
             if inventario_descontado:
                 materiales = json.loads(pedido_a_eliminar['materiales_usados']) if pedido_a_eliminar['materiales_usados'] else []
                 for m in materiales:
-                    safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
+                    _ = safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
                                (int(m['cantidad']), m['material']))
             
             # Eliminar el pedido
-            safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar),))
+            _ = safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar),))
             
             if inventario_descontado:
                 mostrar_feedback("advertencia", f"Pedido {id_eliminar} eliminado e inventario repuesto.")
@@ -595,58 +594,53 @@ elif menu == "Nuevo pedido":
     st.divider()
     
     # Botón para guardar (sin formulario)
-    _faltan_ped = []
-    if not st.session_state.pedido_cliente.strip():
-        _faltan_ped.append("cliente")
-    if not materiales_usados:
-        _faltan_ped.append("al menos un artículo")
-    if precio_total_calculado <= 0:
-        _faltan_ped.append("precio mayor a 0")
-    if _faltan_ped:
-        st.caption(f"⚠️ Falta: {', '.join(_faltan_ped)}")
     if st.button("✅ Guardar pedido", type="primary", key="btn_guardar_pedido_v2"):
-        if _faltan_ped:
-            mostrar_feedback("error", f"Completa los campos obligatorios: {', '.join(_faltan_ped)}")
+        errores = []
+        if not st.session_state.pedido_cliente.strip():
+            errores.append("- Cliente obligatorio")
+        if not materiales_usados:
+            errores.append("- Debes agregar al menos un material")
+        if precio_total_calculado <= 0:
+            errores.append("- El precio total debe ser mayor a 0")
+        
+        for m in materiales_usados:
+            mat_stock = inventario_df[inventario_df['material'] == m['material']]
+            if not mat_stock.empty:
+                stock_actual = int(mat_stock['cantidad'].iloc[0])
+                if m['cantidad'] > stock_actual:
+                    errores.append(f"- Stock insuficiente de {m['material']} (disponible: {stock_actual})")
+        
+        if errores:
+            mostrar_feedback("error", "Corrige los siguientes errores:\n" + "\n".join(errores), tiempo=3)
         else:
-            # Verificar stock
-            errores_stock = []
-            for m in materiales_usados:
-                mat_stock = inventario_df[inventario_df['material'] == m['material']]
-                if not mat_stock.empty:
-                    stock_actual = int(mat_stock['cantidad'].iloc[0])
-                    if m['cantidad'] > stock_actual:
-                        errores_stock.append(f"- Stock insuficiente de {m['material']} (disponible: {stock_actual})")
-            if errores_stock:
-                mostrar_feedback("error", "Corrige los siguientes errores:\n" + "\n".join(errores_stock), tiempo=3)
-            else:
-                mat_json = json.dumps(materiales_usados, ensure_ascii=False)
-                precio_promedio = precio_total_calculado // cantidad_total_materiales if cantidad_total_materiales > 0 else 0
+            mat_json = json.dumps(materiales_usados, ensure_ascii=False)
+            precio_promedio = precio_total_calculado // cantidad_total_materiales if cantidad_total_materiales > 0 else 0
+            
+            # Guardar pedido SIN descontar inventario (se descontará al cambiar a "Listos para entregar")
+            query_ok = safe_query(
+                "INSERT INTO pedidos (fecha, cliente, detalle, cantidad, precio_unidad, total, estado, materiales_usados, pagado, inventario_descontado) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                (str(st.session_state.pedido_fecha), st.session_state.pedido_cliente.strip(), 
+                 st.session_state.pedido_detalle.strip(), cantidad_total_materiales,
+                 precio_promedio, precio_total_calculado, st.session_state.pedido_estado, mat_json, False, False)
+            )
+            
+            if query_ok:
+                # NO descontamos inventario aquí - se hará al cambiar estado a "Listos para entregar"
                 
-                # Guardar pedido SIN descontar inventario (se descontará al cambiar a "Listos para entregar")
-                query_ok = safe_query(
-                    "INSERT INTO pedidos (fecha, cliente, detalle, cantidad, precio_unidad, total, estado, materiales_usados, pagado, inventario_descontado) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                    (str(st.session_state.pedido_fecha), st.session_state.pedido_cliente.strip(), 
-                     st.session_state.pedido_detalle.strip(), cantidad_total_materiales,
-                     precio_promedio, precio_total_calculado, st.session_state.pedido_estado, mat_json, False, False)
-                )
+                # Limpiar session_state después de guardar
+                st.session_state.material_rows_v2 = [0]
+                st.session_state.pedido_cliente = ""
+                st.session_state.pedido_detalle = ""
+                st.session_state.pedido_estado = lista_estados_nuevo_pedido[0]
+                st.session_state.pedido_fecha = date.today()
                 
-                if query_ok:
-                    # NO descontamos inventario aquí - se hará al cambiar estado a "Listos para entregar"
-                    
-                    # Limpiar session_state después de guardar
-                    st.session_state.material_rows_v2 = [0]
-                    st.session_state.pedido_cliente = ""
-                    st.session_state.pedido_detalle = ""
-                    st.session_state.pedido_estado = lista_estados_nuevo_pedido[0]
-                    st.session_state.pedido_fecha = date.today()
-                    
-                    # Limpiar materiales
-                    keys_to_delete = [k for k in st.session_state.keys() if k.startswith(('mat_sel_', 'cant_sel_', 'precio_sel_'))]
-                    for k in keys_to_delete:
-                        del st.session_state[k]
-                    
-                    mostrar_feedback("exito", f"¡Pedido guardado con éxito! Total: ${precio_total_calculado:,.0f}")
-                    st.rerun()
+                # Limpiar materiales
+                keys_to_delete = [k for k in st.session_state.keys() if k.startswith(('mat_sel_', 'cant_sel_', 'precio_sel_'))]
+                for k in keys_to_delete:
+                    del st.session_state[k]
+                
+                mostrar_feedback("exito", f"¡Pedido guardado con éxito! Total: ${precio_total_calculado:,.0f}")
+                st.rerun()
 
 # ---------------------------------------------------------
 # INVENTARIO
@@ -694,19 +688,14 @@ elif menu == "Inventario":
         motivo = st.text_input("Motivo (Ej: Daño, vencimiento, uso interno)", value="Daño", key='motivo_baja')
         costo_unit = float(inventario_con_stock_baja[inventario_con_stock_baja['material'] == mat_baja]['precio_compra'].iloc[0])
         fecha_baja = date.today().isoformat()
-        if not motivo.strip():
-            st.caption("⚠️ El motivo es obligatorio para registrar una baja.")
         if st.button("Registrar baja de material"):
-            if not motivo.strip():
-                mostrar_feedback("error", "El motivo es obligatorio.")
-            else:
-                safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s", (cant_baja, mat_baja))
-                costo_total = costo_unit * cant_baja
-                safe_query(
-                    "INSERT INTO bajas_material (material, cantidad, fecha, motivo, costo_unitario, costo_total) VALUES (%s, %s, %s, %s, %s, %s)",
-                    (mat_baja, cant_baja, fecha_baja, motivo, costo_unit, costo_total)
-                )
-                mostrar_feedback("exito", f"Baja registrada: {cant_baja} de {mat_baja} por '{motivo}'")
+            safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s", (cant_baja, mat_baja))
+            costo_total = costo_unit * cant_baja
+            safe_query(
+                "INSERT INTO bajas_material (material, cantidad, fecha, motivo, costo_unitario, costo_total) VALUES (%s, %s, %s, %s, %s, %s)",
+                (mat_baja, cant_baja, fecha_baja, motivo, costo_unit, costo_total)
+            )
+            mostrar_feedback("exito", f"Baja registrada: {cant_baja} de {mat_baja} por '{motivo}'")
     else:
         st.info("No hay materiales con stock disponible para dar de baja")
     
@@ -740,23 +729,17 @@ elif menu == "Inventario":
                     nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
                     st.caption(f"Costo total recalculado: ${nuevo_costo_total:,.2f}")
                 
-                _nada_baja = not nuevo_motivo.strip() and nueva_cantidad == 0
-                if _nada_baja:
-                    st.caption("⚠️ Cambia al menos un campo para poder actualizar.")
                 if st.button("💾 Actualizar baja", key="btn_update_baja"):
-                    if _nada_baja:
-                        mostrar_feedback("error", "No hay cambios que guardar.")
-                    else:
-                        # Solo actualizar campos que no estén vacíos o en 0
-                        motivo_final = nuevo_motivo.strip() if nuevo_motivo.strip() else baja_actual['motivo']
-                        cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(baja_actual['cantidad'])
-                        costo_final = cantidad_final * float(baja_actual['costo_unitario'])
-                        
-                        safe_query(
-                            "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
-                            (cantidad_final, motivo_final, costo_final, baja_id_editar)
-                        )
-                        mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
+                    # Solo actualizar campos que no estén vacíos o en 0
+                    motivo_final = nuevo_motivo.strip() if nuevo_motivo.strip() else baja_actual['motivo']
+                    cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(baja_actual['cantidad'])
+                    costo_final = cantidad_final * float(baja_actual['costo_unitario'])
+                    
+                    safe_query(
+                        "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
+                        (cantidad_final, motivo_final, costo_final, baja_id_editar)
+                    )
+                    mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
             
             with col2:
                 st.subheader("🗑️ Eliminar baja")
@@ -839,21 +822,17 @@ elif menu == "Inventario":
             nuevo_precio_venta = st.number_input("Nuevo precio de venta (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pv')
             
             if st.form_submit_button("💾 Actualizar material"):
-                _nada_mat = (nueva_cantidad == 0 and not nuevo_detalle.strip() and nuevo_precio_compra == 0 and nuevo_precio_venta == 0)
-                if _nada_mat:
-                    mostrar_feedback("error", "No hay cambios que guardar. Deja los campos en 0 o vacío si no quieres cambiarlos.")
-                else:
-                    # Solo actualizar campos que no estén en 0 o vacíos
-                    cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(mat_data['cantidad'])
-                    detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else mat_data['detalle']
-                    precio_c_final = nuevo_precio_compra if nuevo_precio_compra > 0 else int(mat_data['precio_compra'])
-                    precio_v_final = nuevo_precio_venta if nuevo_precio_venta > 0 else int(mat_data['precio_venta'])
-                    
-                    safe_query(
-                        "UPDATE inventario SET cantidad = %s, detalle = %s, precio_compra = %s, precio_venta = %s WHERE material = %s",
-                        (cantidad_final, detalle_final, precio_c_final, precio_v_final, mat_editar)
-                    )
-                    mostrar_feedback("exito", f"Material '{mat_editar}' actualizado correctamente.")
+                # Solo actualizar campos que no estén en 0 o vacíos
+                cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(mat_data['cantidad'])
+                detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else mat_data['detalle']
+                precio_c_final = nuevo_precio_compra if nuevo_precio_compra > 0 else int(mat_data['precio_compra'])
+                precio_v_final = nuevo_precio_venta if nuevo_precio_venta > 0 else int(mat_data['precio_venta'])
+                
+                safe_query(
+                    "UPDATE inventario SET cantidad = %s, detalle = %s, precio_compra = %s, precio_venta = %s WHERE material = %s",
+                    (cantidad_final, detalle_final, precio_c_final, precio_v_final, mat_editar)
+                )
+                mostrar_feedback("exito", f"Material '{mat_editar}' actualizado correctamente.")
         st.divider()
         mat_eliminar = st.selectbox("Selecciona material a eliminar:", inventario_df['material'].unique(), key="del_mat")
         if st.button("🗑️ Eliminar material"):
@@ -939,11 +918,11 @@ elif menu == "Estados":
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("✅ Marcar como PAGADO", key="btn_pago_estados"):
-                    safe_query("UPDATE pedidos SET pagado = TRUE WHERE id = %s", (id_pago_estados,))
+                    _ = safe_query("UPDATE pedidos SET pagado = TRUE WHERE id = %s", (id_pago_estados,))
                     mostrar_feedback("exito", f"Pedido {id_pago_estados} marcado como PAGADO")
             with col2:
                 if st.button("❌ Marcar como SIN PAGAR", key="btn_no_pago_estados"):
-                    safe_query("UPDATE pedidos SET pagado = FALSE WHERE id = %s", (id_pago_estados,))
+                    _ = safe_query("UPDATE pedidos SET pagado = FALSE WHERE id = %s", (id_pago_estados,))
                     mostrar_feedback("advertencia", f"Pedido {id_pago_estados} marcado como SIN PAGAR")
             
             st.divider()
@@ -965,10 +944,10 @@ elif menu == "Estados":
                     # Descontar inventario
                     materiales = json.loads(pedido_actual['materiales_usados']) if pedido_actual['materiales_usados'] else []
                     for m in materiales:
-                        safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s",
+                        _ = safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s",
                                    (int(m['cantidad']), m['material']))
                     # Marcar como descontado
-                    safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = TRUE WHERE id = %s", 
+                    _ = safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = TRUE WHERE id = %s", 
                                (nuevo_estado, int(id_cambiar)))
                     mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}' e inventario descontado.")
                 
@@ -977,17 +956,17 @@ elif menu == "Estados":
                     # Devolver inventario
                     materiales = json.loads(pedido_actual['materiales_usados']) if pedido_actual['materiales_usados'] else []
                     for m in materiales:
-                        safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
+                        _ = safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
                                    (int(m['cantidad']), m['material']))
                     # Marcar como NO descontado
-                    safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = FALSE WHERE id = %s", 
+                    _ = safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = FALSE WHERE id = %s", 
                                (nuevo_estado, int(id_cambiar)))
                     mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}' e inventario repuesto.")
                 
                 # CASO 3: Cambio de estado sin afectar inventario
                 else:
                     # Solo cambiar el estado
-                    safe_query("UPDATE pedidos SET estado = %s WHERE id = %s", (nuevo_estado, int(id_cambiar)))
+                    _ = safe_query("UPDATE pedidos SET estado = %s WHERE id = %s", (nuevo_estado, int(id_cambiar)))
                     mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}'.")
             
             st.divider()
@@ -1013,21 +992,17 @@ elif menu == "Estados":
                     st.caption(f"💵 Precio promedio por unidad: ${nuevo_precio_promedio:,.0f}")
                 
                 if st.form_submit_button("💾 Guardar cambios"):
-                    _nada_ped = (not nuevo_cliente.strip() and not nuevo_detalle.strip() and nuevo_precio_total == 0)
-                    if _nada_ped:
-                        mostrar_feedback("error", "No hay cambios que guardar. Deja los campos vacíos o en 0 si no quieres cambiarlos.")
-                    else:
-                        # Solo actualizar campos que no estén vacíos o en 0
-                        cliente_final = nuevo_cliente.strip() if nuevo_cliente.strip() else pedido_editar['cliente']
-                        detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else pedido_editar['detalle']
-                        total_final = nuevo_precio_total if nuevo_precio_total > 0 else int(pedido_editar['total'])
-                        precio_promedio_final = total_final // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
-                        
-                        safe_query(
-                            "UPDATE pedidos SET cliente = %s, detalle = %s, precio_unidad = %s, total = %s WHERE id = %s",
-                            (cliente_final, detalle_final, precio_promedio_final, total_final, int(id_editar))
-                        )
-                        mostrar_feedback("exito", f"Pedido {id_editar} actualizado correctamente.")
+                    # Solo actualizar campos que no estén vacíos o en 0
+                    cliente_final = nuevo_cliente.strip() if nuevo_cliente.strip() else pedido_editar['cliente']
+                    detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else pedido_editar['detalle']
+                    total_final = nuevo_precio_total if nuevo_precio_total > 0 else int(pedido_editar['total'])
+                    precio_promedio_final = total_final // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
+                    
+                    safe_query(
+                        "UPDATE pedidos SET cliente = %s, detalle = %s, precio_unidad = %s, total = %s WHERE id = %s",
+                        (cliente_final, detalle_final, precio_promedio_final, total_final, int(id_editar))
+                    )
+                    mostrar_feedback("exito", f"Pedido {id_editar} actualizado correctamente.")
             
             st.divider()
             id_eliminar_estado = st.selectbox("Selecciona pedido a eliminar en este estado:", df_est["id"], key="del_estado")
@@ -1040,11 +1015,11 @@ elif menu == "Estados":
                 if inventario_descontado:
                     materiales = json.loads(pedido_a_eliminar['materiales_usados']) if pedido_a_eliminar['materiales_usados'] else []
                     for m in materiales:
-                        safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
+                        _ = safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
                                    (int(m['cantidad']), m['material']))
                 
                 # Eliminar el pedido
-                safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar_estado),))
+                _ = safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar_estado),))
                 
                 if inventario_descontado:
                     mostrar_feedback("advertencia", f"Pedido {id_eliminar_estado} eliminado e inventario repuesto.")
