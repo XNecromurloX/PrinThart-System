@@ -392,19 +392,27 @@ if menu == "Entregas":
         
         st.divider()
         st.subheader("💳 Marcar pago de pedido")
-        id_pago = st.selectbox("Selecciona ID de pedido:", df['id'].tolist(), key="id_pago")
-        pedido_selec = df[df['id'] == id_pago].iloc[0]
-        estado_actual = '✅ Pagado' if pedido_selec.get('pagado', False) else '❌ Sin pagar'
-        st.caption(f"Estado actual: {estado_actual}")
-        col1, col2 = st.columns(2)
-        with col1:
-            if st.button("✅ Marcar como PAGADO"):
-                safe_query("UPDATE pedidos SET pagado = TRUE WHERE id = %s", (id_pago,))
-                mostrar_feedback("exito", f"Pedido {id_pago} marcado como PAGADO")
-        with col2:
-            if st.button("❌ Marcar como SIN PAGAR"):
-                safe_query("UPDATE pedidos SET pagado = FALSE WHERE id = %s", (id_pago,))
-                mostrar_feedback("advertencia", f"Pedido {id_pago} marcado como SIN PAGAR")
+        
+        # Selectbox con placeholder
+        ids_opciones_pago = ["-- Selecciona ID --"] + [str(x) for x in df['id'].tolist()]
+        id_pago_selec = st.selectbox("Selecciona ID de pedido:", ids_opciones_pago, key="id_pago")
+        
+        if id_pago_selec != "-- Selecciona ID --":
+            id_pago = int(id_pago_selec)
+            pedido_selec = df[df['id'] == id_pago].iloc[0]
+            estado_actual = '✅ Pagado' if pedido_selec.get('pagado', False) else '❌ Sin pagar'
+            st.caption(f"Estado actual: {estado_actual}")
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Marcar como PAGADO"):
+                    _ = safe_query("UPDATE pedidos SET pagado = TRUE WHERE id = %s", (id_pago,))
+                    mostrar_feedback("exito", f"Pedido {id_pago} marcado como PAGADO")
+            with col2:
+                if st.button("❌ Marcar como SIN PAGAR"):
+                    _ = safe_query("UPDATE pedidos SET pagado = FALSE WHERE id = %s", (id_pago,))
+                    mostrar_feedback("advertencia", f"Pedido {id_pago} marcado como SIN PAGAR")
+        else:
+            st.info("👆 Selecciona un pedido para marcar su pago")
     else:
         st.info("No hay entregas completadas aún.")
 
@@ -422,26 +430,34 @@ if menu == "Entregas":
             bajas_df[['material', 'cantidad', 'fecha', 'motivo', 'costo_total']])
     if not df.empty:
         st.divider()
-        id_eliminar = st.selectbox("Selecciona pedido entregado a eliminar:", df['id'], key="del_ped_ent")
-        if st.button("🗑️ Eliminar pedido seleccionado", key="btn_del_ped_ent"):
-            # Obtener el pedido antes de eliminarlo
-            pedido_a_eliminar = df[df['id'] == id_eliminar].iloc[0]
-            inventario_descontado = pedido_a_eliminar.get('inventario_descontado', False)
-            
-            # Si el inventario fue descontado, devolverlo
-            if inventario_descontado:
-                materiales = json.loads(pedido_a_eliminar['materiales_usados']) if pedido_a_eliminar['materiales_usados'] else []
-                for m in materiales:
-                    _ = safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
-                               (int(m['cantidad']), m['material']))
-            
-            # Eliminar el pedido
-            _ = safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar),))
-            
-            if inventario_descontado:
-                mostrar_feedback("advertencia", f"Pedido {id_eliminar} eliminado e inventario repuesto.")
-            else:
-                mostrar_feedback("advertencia", f"Pedido {id_eliminar} eliminado.")
+        
+        # Selectbox con placeholder
+        ids_opciones_del = ["-- Selecciona ID --"] + [str(x) for x in df['id'].tolist()]
+        id_eliminar_selec = st.selectbox("Selecciona pedido entregado a eliminar:", ids_opciones_del, key="del_ped_ent")
+        
+        if id_eliminar_selec != "-- Selecciona ID --":
+            id_eliminar = int(id_eliminar_selec)
+            if st.button("🗑️ Eliminar pedido seleccionado", key="btn_del_ped_ent"):
+                # Obtener el pedido antes de eliminarlo
+                pedido_a_eliminar = df[df['id'] == id_eliminar].iloc[0]
+                inventario_descontado = pedido_a_eliminar.get('inventario_descontado', False)
+                
+                # Si el inventario fue descontado, devolverlo
+                if inventario_descontado:
+                    materiales = json.loads(pedido_a_eliminar['materiales_usados']) if pedido_a_eliminar['materiales_usados'] else []
+                    for m in materiales:
+                        _ = safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
+                                   (int(m['cantidad']), m['material']))
+                
+                # Eliminar el pedido
+                _ = safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar),))
+                
+                if inventario_descontado:
+                    mostrar_feedback("advertencia", f"Pedido {id_eliminar} eliminado e inventario repuesto.")
+                else:
+                    mostrar_feedback("advertencia", f"Pedido {id_eliminar} eliminado.")
+        else:
+            st.info("👆 Selecciona un pedido para eliminar")
 
 # ---------------------------------------------------------
 # NUEVO PEDIDO (SIN FORMULARIO - TIEMPO REAL)
@@ -697,29 +713,36 @@ elif menu == "Inventario":
     # Filtrar solo materiales con stock disponible
     inventario_con_stock_baja = inventario_df[inventario_df['cantidad'] > 0]
     if not inventario_con_stock_baja.empty:
-        mat_baja = st.selectbox("Material:", inventario_con_stock_baja['material'].tolist(), key='select_baja')
-        stock_disponible = int(inventario_con_stock_baja[inventario_con_stock_baja['material'] == mat_baja]['cantidad'].iloc[0])
-        cant_baja = st.number_input("Cantidad a dar de baja:", min_value=1,
-                                    max_value=stock_disponible,
-                                    value=1, step=1, key='cant_baja')
-        motivo = st.text_input("Motivo (Ej: Daño, vencimiento, uso interno)", value="", placeholder="Ingresa el motivo", key='motivo_baja')
-        costo_unit = float(inventario_con_stock_baja[inventario_con_stock_baja['material'] == mat_baja]['precio_compra'].iloc[0])
-        fecha_baja = date.today().isoformat()
+        # Agregar opción placeholder
+        materiales_opciones = ["-- Selecciona un material --"] + inventario_con_stock_baja['material'].tolist()
+        mat_baja = st.selectbox("Material:", materiales_opciones, key='select_baja')
         
-        # Validar que haya motivo
-        puede_registrar = motivo.strip() != "" and cant_baja > 0
-        
-        if st.button("Registrar baja de material", disabled=not puede_registrar):
-            _ = safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s", (cant_baja, mat_baja))
-            costo_total = costo_unit * cant_baja
-            _ = safe_query(
-                "INSERT INTO bajas_material (material, cantidad, fecha, motivo, costo_unitario, costo_total) VALUES (%s, %s, %s, %s, %s, %s)",
-                (mat_baja, cant_baja, fecha_baja, motivo.strip(), costo_unit, costo_total)
-            )
-            mostrar_feedback("exito", f"Baja registrada: {cant_baja} de {mat_baja} por '{motivo.strip()}'")
-        
-        if not puede_registrar:
-            st.caption("⚠️ Completa el motivo para habilitar el botón")
+        # Solo mostrar campos si seleccionó un material válido
+        if mat_baja != "-- Selecciona un material --":
+            stock_disponible = int(inventario_con_stock_baja[inventario_con_stock_baja['material'] == mat_baja]['cantidad'].iloc[0])
+            cant_baja = st.number_input("Cantidad a dar de baja:", min_value=1,
+                                        max_value=stock_disponible,
+                                        value=1, step=1, key='cant_baja')
+            motivo = st.text_input("Motivo (Ej: Daño, vencimiento, uso interno)", value="", placeholder="Ingresa el motivo", key='motivo_baja')
+            costo_unit = float(inventario_con_stock_baja[inventario_con_stock_baja['material'] == mat_baja]['precio_compra'].iloc[0])
+            fecha_baja = date.today().isoformat()
+            
+            # Validar que haya motivo
+            puede_registrar = motivo.strip() != "" and cant_baja > 0
+            
+            if st.button("Registrar baja de material", disabled=not puede_registrar):
+                _ = safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s", (cant_baja, mat_baja))
+                costo_total = costo_unit * cant_baja
+                _ = safe_query(
+                    "INSERT INTO bajas_material (material, cantidad, fecha, motivo, costo_unitario, costo_total) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (mat_baja, cant_baja, fecha_baja, motivo.strip(), costo_unit, costo_total)
+                )
+                mostrar_feedback("exito", f"Baja registrada: {cant_baja} de {mat_baja} por '{motivo.strip()}'")
+            
+            if not puede_registrar:
+                st.caption("⚠️ Completa el motivo para habilitar el botón")
+        else:
+            st.info("👆 Selecciona un material para continuar")
     else:
         st.info("No hay materiales con stock disponible para dar de baja")
     
@@ -731,9 +754,14 @@ elif menu == "Inventario":
             st.dataframe(bajas_df_edit[['id', 'material', 'cantidad', 'fecha', 'motivo', 'costo_total']], 
                         use_container_width=True, hide_index=True)
             
-            baja_id_editar = st.selectbox("Selecciona ID de baja para editar/eliminar:", 
-                                         bajas_df_edit['id'].tolist(), key="baja_edit_select")
-            baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
+            # Selectbox con placeholder
+            ids_bajas_opciones = ["-- Selecciona ID --"] + [str(x) for x in bajas_df_edit['id'].tolist()]
+            baja_id_selec = st.selectbox("Selecciona ID de baja para editar/eliminar:", 
+                                         ids_bajas_opciones, key="baja_edit_select")
+            
+            if baja_id_selec != "-- Selecciona ID --":
+                baja_id_editar = int(baja_id_selec)
+                baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
             
             col1, col2 = st.columns(2)
             with col1:
@@ -776,8 +804,10 @@ elif menu == "Inventario":
                 st.warning(f"⚠️ Vas a eliminar la baja de {baja_actual['material']}")
                 st.caption(f"Cantidad: {baja_actual['cantidad']} | Costo: ${baja_actual['costo_total']:.2f}")
                 if st.button("🗑️ Eliminar esta baja", key="btn_del_baja"):
-                    safe_query("DELETE FROM bajas_material WHERE id = %s", (baja_id_editar,))
+                    _ = safe_query("DELETE FROM bajas_material WHERE id = %s", (baja_id_editar,))
                     mostrar_feedback("advertencia", f"Baja {baja_id_editar} eliminada")
+            else:
+                st.info("👆 Selecciona un ID de baja para editar o eliminar")
 
     # --- VISUALIZACIÓN INVENTARIO ---
     inventario_df = read_df("SELECT * FROM inventario")
@@ -834,41 +864,56 @@ elif menu == "Inventario":
         with col3: st.metric("🗑️ Pérdidas por Bajas", f"${perdidas_bajas:,.0f}")
         st.divider()
         st.subheader("✏️ Editar material")
-        mat_editar = st.selectbox("Selecciona material a editar:", inventario_df['material'].unique(), key="edit_mat")
-        mat_data = inventario_df[inventario_df['material'] == mat_editar].iloc[0]
         
-        # Mostrar valores actuales
-        st.info(f"📊 **Valores actuales de '{mat_editar}':**\n\n"
-                f"• Cantidad: {int(mat_data['cantidad'])}\n\n"
-                f"• Detalle: {mat_data['detalle'] if mat_data['detalle'] else 'Sin detalle'}\n\n"
-                f"• Precio compra: ${int(mat_data['precio_compra'])}\n\n"
-                f"• Precio venta: ${int(mat_data['precio_venta'])}")
+        # Selectbox con placeholder
+        materiales_opciones = ["-- Selecciona un material --"] + inventario_df['material'].unique().tolist()
+        mat_editar_selec = st.selectbox("Selecciona material a editar:", materiales_opciones, key="edit_mat")
         
-        with st.form("frm_editar_material"):
-            st.caption("⚠️ Solo completa los campos que quieras cambiar")
-            nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_cant')
-            nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=50, key='upd_detalle')
-            nuevo_precio_compra = st.number_input("Nuevo precio de compra (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pc')
-            nuevo_precio_venta = st.number_input("Nuevo precio de venta (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pv')
+        if mat_editar_selec != "-- Selecciona un material --":
+            mat_editar = mat_editar_selec
+            mat_data = inventario_df[inventario_df['material'] == mat_editar].iloc[0]
             
-            if st.form_submit_button("💾 Actualizar material"):
-                # Solo actualizar campos que no estén en 0 o vacíos
-                cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(mat_data['cantidad'])
-                detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else mat_data['detalle']
-                precio_c_final = nuevo_precio_compra if nuevo_precio_compra > 0 else int(mat_data['precio_compra'])
-                precio_v_final = nuevo_precio_venta if nuevo_precio_venta > 0 else int(mat_data['precio_venta'])
+            # Mostrar valores actuales
+            st.info(f"📊 **Valores actuales de '{mat_editar}':**\n\n"
+                    f"• Cantidad: {int(mat_data['cantidad'])}\n\n"
+                    f"• Detalle: {mat_data['detalle'] if mat_data['detalle'] else 'Sin detalle'}\n\n"
+                    f"• Precio compra: ${int(mat_data['precio_compra'])}\n\n"
+                    f"• Precio venta: ${int(mat_data['precio_venta'])}")
+            
+            with st.form("frm_editar_material"):
+                st.caption("⚠️ Solo completa los campos que quieras cambiar")
+                nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_cant')
+                nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=50, key='upd_detalle')
+                nuevo_precio_compra = st.number_input("Nuevo precio de compra (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pc')
+                nuevo_precio_venta = st.number_input("Nuevo precio de venta (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pv')
                 
-                safe_query(
-                    "UPDATE inventario SET cantidad = %s, detalle = %s, precio_compra = %s, precio_venta = %s WHERE material = %s",
-                    (cantidad_final, detalle_final, precio_c_final, precio_v_final, mat_editar)
-                )
-                mostrar_feedback("exito", f"Material '{mat_editar}' actualizado correctamente.")
+                if st.form_submit_button("💾 Actualizar material"):
+                    # Solo actualizar campos que no estén en 0 o vacíos
+                    cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(mat_data['cantidad'])
+                    detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else mat_data['detalle']
+                    precio_c_final = nuevo_precio_compra if nuevo_precio_compra > 0 else int(mat_data['precio_compra'])
+                    precio_v_final = nuevo_precio_venta if nuevo_precio_venta > 0 else int(mat_data['precio_venta'])
+                    
+                    _ = safe_query(
+                        "UPDATE inventario SET cantidad = %s, detalle = %s, precio_compra = %s, precio_venta = %s WHERE material = %s",
+                        (cantidad_final, detalle_final, precio_c_final, precio_v_final, mat_editar)
+                    )
+                    mostrar_feedback("exito", f"Material '{mat_editar}' actualizado correctamente.")
+        else:
+            st.info("👆 Selecciona un material para editar")
         st.divider()
-        mat_eliminar = st.selectbox("Selecciona material a eliminar:", inventario_df['material'].unique(), key="del_mat")
-        if st.button("🗑️ Eliminar material"):
-            query_ok = safe_query("DELETE FROM inventario WHERE material = %s", (mat_eliminar,))
-            if query_ok:
-                mostrar_feedback("advertencia", f"Material '{mat_eliminar}' eliminado.")
+        
+        # Selectbox para eliminar con placeholder
+        materiales_opciones_del = ["-- Selecciona un material --"] + inventario_df['material'].unique().tolist()
+        mat_eliminar_selec = st.selectbox("Selecciona material a eliminar:", materiales_opciones_del, key="del_mat")
+        
+        if mat_eliminar_selec != "-- Selecciona un material --":
+            if st.button("🗑️ Eliminar material"):
+                query_ok = safe_query("DELETE FROM inventario WHERE material = %s", (mat_eliminar_selec,))
+                if query_ok:
+                    mostrar_feedback("advertencia", f"Material '{mat_eliminar_selec}' eliminado.")
+        else:
+            st.info("👆 Selecciona un material para eliminar")
     else:
         st.info("No hay materiales registrados.")
 
@@ -907,11 +952,18 @@ elif menu == "Suplidores":
             columns={'nombre': 'Nombre', 'whatsapp': 'WhatsApp', 'sitio': 'Web', 'producto': 'Compra'}),
             use_container_width=True, hide_index=True)
         st.divider()
-        supl_del = st.selectbox("Selecciona suplidor a eliminar:", suplidores_df['nombre'].unique(), key="del_sup")
-        if st.button("🗑️ Eliminar suplidor", key="btn_del_sup"):
-            query_ok = safe_query("DELETE FROM suplidores WHERE nombre = %s", (supl_del,))
-            if query_ok:
-                mostrar_feedback("advertencia", f"Suplidor '{supl_del}' eliminado.")
+        
+        # Selectbox con placeholder
+        suplidores_opciones = ["-- Selecciona un suplidor --"] + suplidores_df['nombre'].unique().tolist()
+        supl_del_selec = st.selectbox("Selecciona suplidor a eliminar:", suplidores_opciones, key="del_sup")
+        
+        if supl_del_selec != "-- Selecciona un suplidor --":
+            if st.button("🗑️ Eliminar suplidor", key="btn_del_sup"):
+                query_ok = safe_query("DELETE FROM suplidores WHERE nombre = %s", (supl_del_selec,))
+                if query_ok:
+                    mostrar_feedback("advertencia", f"Suplidor '{supl_del_selec}' eliminado.")
+        else:
+            st.info("👆 Selecciona un suplidor para eliminar")
     else:
         st.info("No hay suplidores registrados.")
 
@@ -941,117 +993,149 @@ elif menu == "Estados":
             # Asegurar que columna pagado existe
             if 'pagado' not in df_est.columns:
                 df_est['pagado'] = False
-            id_pago_estados = st.selectbox("Selecciona ID de pedido:", df_est['id'].tolist(), key="id_pago_estados")
-            pedido_pago = df_est[df_est['id'] == id_pago_estados].iloc[0]
-            estado_pago_actual = '✅ Pagado' if pedido_pago.get('pagado', False) else '❌ Sin pagar'
-            st.caption(f"Estado actual: {estado_pago_actual}")
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("✅ Marcar como PAGADO", key="btn_pago_estados"):
-                    _ = safe_query("UPDATE pedidos SET pagado = TRUE WHERE id = %s", (id_pago_estados,))
-                    mostrar_feedback("exito", f"Pedido {id_pago_estados} marcado como PAGADO")
-            with col2:
-                if st.button("❌ Marcar como SIN PAGAR", key="btn_no_pago_estados"):
-                    _ = safe_query("UPDATE pedidos SET pagado = FALSE WHERE id = %s", (id_pago_estados,))
-                    mostrar_feedback("advertencia", f"Pedido {id_pago_estados} marcado como SIN PAGAR")
+            
+            # Selectbox con placeholder
+            ids_opciones_pago = ["-- Selecciona ID --"] + [str(x) for x in df_est['id'].tolist()]
+            id_pago_selec = st.selectbox("Selecciona ID de pedido:", ids_opciones_pago, key="id_pago_estados")
+            
+            if id_pago_selec != "-- Selecciona ID --":
+                id_pago_estados = int(id_pago_selec)
+                pedido_pago = df_est[df_est['id'] == id_pago_estados].iloc[0]
+                estado_pago_actual = '✅ Pagado' if pedido_pago.get('pagado', False) else '❌ Sin pagar'
+                st.caption(f"Estado actual: {estado_pago_actual}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✅ Marcar como PAGADO", key="btn_pago_estados"):
+                        _ = safe_query("UPDATE pedidos SET pagado = TRUE WHERE id = %s", (id_pago_estados,))
+                        mostrar_feedback("exito", f"Pedido {id_pago_estados} marcado como PAGADO")
+                with col2:
+                    if st.button("❌ Marcar como SIN PAGAR", key="btn_no_pago_estados"):
+                        _ = safe_query("UPDATE pedidos SET pagado = FALSE WHERE id = %s", (id_pago_estados,))
+                        mostrar_feedback("advertencia", f"Pedido {id_pago_estados} marcado como SIN PAGAR")
+            else:
+                st.info("👆 Selecciona un pedido para marcar su pago")
             
             st.divider()
             st.subheader("Cambiar estado de un pedido")
-            id_cambiar = st.selectbox("Selecciona ID de pedido para cambiar estado:", df_est["id"], key="estado_change")
-            nuevo_estado = st.selectbox(
-                "Nuevo estado:", [e for e in lista_estados_todos if e != estado_sel], key="estado_nuevo"
-            )
-            if st.button("Cambiar estado de este pedido", key="btn_estado_cambio"):
-                # Obtener el pedido actual
-                pedido_actual = df_est[df_est["id"] == id_cambiar].iloc[0]
-                inventario_ya_descontado = pedido_actual.get('inventario_descontado', False)
-                
-                # Estados que requieren inventario descontado
-                estados_con_descuento = ["Listos para entregar", "Entregado"]
-                
-                # CASO 1: Mover A un estado que requiere descuento (y aún no está descontado)
-                if nuevo_estado in estados_con_descuento and not inventario_ya_descontado:
-                    # Descontar inventario
-                    materiales = json.loads(pedido_actual['materiales_usados']) if pedido_actual['materiales_usados'] else []
-                    for m in materiales:
-                        _ = safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s",
-                                   (int(m['cantidad']), m['material']))
-                    # Marcar como descontado
-                    _ = safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = TRUE WHERE id = %s", 
-                               (nuevo_estado, int(id_cambiar)))
-                    mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}' e inventario descontado.")
-                
-                # CASO 2: Mover DESDE un estado con descuento HACIA uno sin descuento (devolver inventario)
-                elif nuevo_estado not in estados_con_descuento and inventario_ya_descontado:
-                    # Devolver inventario
-                    materiales = json.loads(pedido_actual['materiales_usados']) if pedido_actual['materiales_usados'] else []
-                    for m in materiales:
-                        _ = safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
-                                   (int(m['cantidad']), m['material']))
-                    # Marcar como NO descontado
-                    _ = safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = FALSE WHERE id = %s", 
-                               (nuevo_estado, int(id_cambiar)))
-                    mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}' e inventario repuesto.")
-                
-                # CASO 3: Cambio de estado sin afectar inventario
-                else:
-                    # Solo cambiar el estado
-                    _ = safe_query("UPDATE pedidos SET estado = %s WHERE id = %s", (nuevo_estado, int(id_cambiar)))
-                    mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}'.")
+            
+            # Selectbox con placeholder
+            ids_opciones_cambio = ["-- Selecciona ID --"] + [str(x) for x in df_est["id"].tolist()]
+            id_cambiar_selec = st.selectbox("Selecciona ID de pedido para cambiar estado:", ids_opciones_cambio, key="estado_change")
+            
+            if id_cambiar_selec != "-- Selecciona ID --":
+                id_cambiar = int(id_cambiar_selec)
+                nuevo_estado = st.selectbox(
+                    "Nuevo estado:", [e for e in lista_estados_todos if e != estado_sel], key="estado_nuevo"
+                )
+                if st.button("Cambiar estado de este pedido", key="btn_estado_cambio"):
+                    # Obtener el pedido actual
+                    pedido_actual = df_est[df_est["id"] == id_cambiar].iloc[0]
+                    inventario_ya_descontado = pedido_actual.get('inventario_descontado', False)
+                    
+                    # Estados que requieren inventario descontado
+                    estados_con_descuento = ["Listos para entregar", "Entregado"]
+                    
+                    # CASO 1: Mover A un estado que requiere descuento (y aún no está descontado)
+                    if nuevo_estado in estados_con_descuento and not inventario_ya_descontado:
+                        # Descontar inventario
+                        materiales = json.loads(pedido_actual['materiales_usados']) if pedido_actual['materiales_usados'] else []
+                        for m in materiales:
+                            _ = safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s",
+                                       (int(m['cantidad']), m['material']))
+                        # Marcar como descontado
+                        _ = safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = TRUE WHERE id = %s", 
+                                   (nuevo_estado, int(id_cambiar)))
+                        mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}' e inventario descontado.")
+                    
+                    # CASO 2: Mover DESDE un estado con descuento HACIA uno sin descuento (devolver inventario)
+                    elif nuevo_estado not in estados_con_descuento and inventario_ya_descontado:
+                        # Devolver inventario
+                        materiales = json.loads(pedido_actual['materiales_usados']) if pedido_actual['materiales_usados'] else []
+                        for m in materiales:
+                            _ = safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
+                                       (int(m['cantidad']), m['material']))
+                        # Marcar como NO descontado
+                        _ = safe_query("UPDATE pedidos SET estado = %s, inventario_descontado = FALSE WHERE id = %s", 
+                                   (nuevo_estado, int(id_cambiar)))
+                        mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}' e inventario repuesto.")
+                    
+                    # CASO 3: Cambio de estado sin afectar inventario
+                    else:
+                        # Solo cambiar el estado
+                        _ = safe_query("UPDATE pedidos SET estado = %s WHERE id = %s", (nuevo_estado, int(id_cambiar)))
+                        mostrar_feedback("exito", f"Pedido {id_cambiar} cambiado a '{nuevo_estado}'.")
+            else:
+                st.info("👆 Selecciona un pedido para cambiar su estado")
             
             st.divider()
             st.subheader("✏️ Editar pedido")
-            id_editar = st.selectbox("Selecciona ID de pedido para editar:", df_est["id"], key="estado_edit")
-            pedido_editar = df_est[df_est["id"] == id_editar].iloc[0]
             
-            # Mostrar valores actuales
-            st.info(f"📊 **Valores actuales del pedido #{id_editar}:**\n\n"
-                   f"• Cliente: {pedido_editar['cliente']}\n\n"
-                   f"• Detalle: {pedido_editar['detalle']}\n\n"
-                   f"• Total: ${int(pedido_editar['total']):,.0f}\n\n"
-                   f"• Cantidad artículos: {int(pedido_editar['cantidad'])}")
+            # Selectbox con placeholder
+            ids_opciones_edit = ["-- Selecciona ID --"] + [str(x) for x in df_est["id"].tolist()]
+            id_editar_selec = st.selectbox("Selecciona ID de pedido para editar:", ids_opciones_edit, key="estado_edit")
             
-            with st.form("frm_editar_pedido"):
-                st.caption("⚠️ Solo completa los campos que quieras cambiar")
-                nuevo_cliente = st.text_input("Nuevo cliente (dejar vacío para no cambiar)", value="", placeholder=pedido_editar['cliente'])
-                nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=pedido_editar['detalle'], height=80)
-                nuevo_precio_total = st.number_input("Nuevo precio total (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d")
+            if id_editar_selec != "-- Selecciona ID --":
+                id_editar = int(id_editar_selec)
+                pedido_editar = df_est[df_est["id"] == id_editar].iloc[0]
                 
-                if nuevo_precio_total > 0:
-                    nuevo_precio_promedio = nuevo_precio_total // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
-                    st.caption(f"💵 Precio promedio por unidad: ${nuevo_precio_promedio:,.0f}")
+                # Mostrar valores actuales
+                st.info(f"📊 **Valores actuales del pedido #{id_editar}:**\n\n"
+                       f"• Cliente: {pedido_editar['cliente']}\n\n"
+                       f"• Detalle: {pedido_editar['detalle']}\n\n"
+                       f"• Total: ${int(pedido_editar['total']):,.0f}\n\n"
+                       f"• Cantidad artículos: {int(pedido_editar['cantidad'])}")
                 
-                if st.form_submit_button("💾 Guardar cambios"):
-                    # Solo actualizar campos que no estén vacíos o en 0
-                    cliente_final = nuevo_cliente.strip() if nuevo_cliente.strip() else pedido_editar['cliente']
-                    detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else pedido_editar['detalle']
-                    total_final = nuevo_precio_total if nuevo_precio_total > 0 else int(pedido_editar['total'])
-                    precio_promedio_final = total_final // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
+                with st.form("frm_editar_pedido"):
+                    st.caption("⚠️ Solo completa los campos que quieras cambiar")
+                    nuevo_cliente = st.text_input("Nuevo cliente (dejar vacío para no cambiar)", value="", placeholder=pedido_editar['cliente'])
+                    nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=pedido_editar['detalle'], height=80)
+                    nuevo_precio_total = st.number_input("Nuevo precio total (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d")
                     
-                    safe_query(
-                        "UPDATE pedidos SET cliente = %s, detalle = %s, precio_unidad = %s, total = %s WHERE id = %s",
-                        (cliente_final, detalle_final, precio_promedio_final, total_final, int(id_editar))
-                    )
-                    mostrar_feedback("exito", f"Pedido {id_editar} actualizado correctamente.")
+                    if nuevo_precio_total > 0:
+                        nuevo_precio_promedio = nuevo_precio_total // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
+                        st.caption(f"💵 Precio promedio por unidad: ${nuevo_precio_promedio:,.0f}")
+                    
+                    if st.form_submit_button("💾 Guardar cambios"):
+                        # Solo actualizar campos que no estén vacíos o en 0
+                        cliente_final = nuevo_cliente.strip() if nuevo_cliente.strip() else pedido_editar['cliente']
+                        detalle_final = nuevo_detalle.strip() if nuevo_detalle.strip() else pedido_editar['detalle']
+                        total_final = nuevo_precio_total if nuevo_precio_total > 0 else int(pedido_editar['total'])
+                        precio_promedio_final = total_final // int(pedido_editar['cantidad']) if int(pedido_editar['cantidad']) > 0 else 0
+                        
+                        _ = safe_query(
+                            "UPDATE pedidos SET cliente = %s, detalle = %s, precio_unidad = %s, total = %s WHERE id = %s",
+                            (cliente_final, detalle_final, precio_promedio_final, total_final, int(id_editar))
+                        )
+                        mostrar_feedback("exito", f"Pedido {id_editar} actualizado correctamente.")
+            else:
+                st.info("👆 Selecciona un pedido para editar")
             
             st.divider()
-            id_eliminar_estado = st.selectbox("Selecciona pedido a eliminar en este estado:", df_est["id"], key="del_estado")
-            if st.button("🗑️ Eliminar pedido de este estado"):
-                # Obtener el pedido antes de eliminarlo
-                pedido_a_eliminar = df_est[df_est['id'] == id_eliminar_estado].iloc[0]
-                inventario_descontado = pedido_a_eliminar.get('inventario_descontado', False)
-                
-                # Si el inventario fue descontado, devolverlo
-                if inventario_descontado:
-                    materiales = json.loads(pedido_a_eliminar['materiales_usados']) if pedido_a_eliminar['materiales_usados'] else []
-                    for m in materiales:
-                        _ = safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
-                                   (int(m['cantidad']), m['material']))
-                
-                # Eliminar el pedido
-                _ = safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar_estado),))
-                
-                if inventario_descontado:
-                    mostrar_feedback("advertencia", f"Pedido {id_eliminar_estado} eliminado e inventario repuesto.")
-                else:
-                    mostrar_feedback("advertencia", f"Pedido {id_eliminar_estado} eliminado.")
+            
+            # Selectbox para eliminar con placeholder
+            ids_opciones_del = ["-- Selecciona ID --"] + [str(x) for x in df_est["id"].tolist()]
+            id_eliminar_selec = st.selectbox("Selecciona pedido a eliminar en este estado:", ids_opciones_del, key="del_estado")
+            
+            if id_eliminar_selec != "-- Selecciona ID --":
+                id_eliminar_estado = int(id_eliminar_selec)
+                if st.button("🗑️ Eliminar pedido de este estado"):
+                    # Obtener el pedido antes de eliminarlo
+                    pedido_a_eliminar = df_est[df_est['id'] == id_eliminar_estado].iloc[0]
+                    inventario_descontado = pedido_a_eliminar.get('inventario_descontado', False)
+                    
+                    # Si el inventario fue descontado, devolverlo
+                    if inventario_descontado:
+                        materiales = json.loads(pedido_a_eliminar['materiales_usados']) if pedido_a_eliminar['materiales_usados'] else []
+                        for m in materiales:
+                            _ = safe_query("UPDATE inventario SET cantidad = cantidad + %s WHERE material = %s",
+                                       (int(m['cantidad']), m['material']))
+                    
+                    # Eliminar el pedido
+                    _ = safe_query("DELETE FROM pedidos WHERE id = %s", (int(id_eliminar_estado),))
+                    
+                    if inventario_descontado:
+                        mostrar_feedback("advertencia", f"Pedido {id_eliminar_estado} eliminado e inventario repuesto.")
+                    else:
+                        mostrar_feedback("advertencia", f"Pedido {id_eliminar_estado} eliminado.")
+            else:
+                st.info("👆 Selecciona un pedido para eliminar")
