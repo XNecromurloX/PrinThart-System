@@ -759,14 +759,16 @@ elif menu == "Inventario":
             baja_id_selec = st.selectbox("Selecciona ID de baja para editar/eliminar:", 
                                          ids_bajas_opciones, key="baja_edit_select")
             
-            if baja_id_selec != "-- Selecciona ID --":
-                baja_id_editar = int(baja_id_selec)
-                baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
-            
-            col1, col2 = st.columns(2)
-             with col1:
-                st.subheader("✏️ Editar baja")
-                st.info(f"📊 **Valores actuales:**\n\n"
+if baja_id_selec != "-- Selecciona ID --":
+
+    baja_id_editar = int(baja_id_selec)
+    baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("✏️ Editar baja")
+        st.info(f"📊 **Valores actuales:**\n\n"
                        f"• Material: {baja_actual['material']}\n\n"
                        f"• Cantidad: {int(baja_actual['cantidad'])}\n\n"
                        f"• Motivo: {baja_actual['motivo']}\n\n"
@@ -797,18 +799,17 @@ elif menu == "Inventario":
                     mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
                 
                 if not hay_cambios:
-                    st.caption("⚠️ Completa al menos un campo para habilitar el botón")
-            
-             with col2:
+                    st.caption("⚠️ Completa al menos un campo para habilitar el botón")        
+    with col2:
                 st.subheader("🗑️ Eliminar baja")
                 st.warning(f"⚠️ Vas a eliminar la baja de {baja_actual['material']}")
                 st.caption(f"Cantidad: {baja_actual['cantidad']} | Costo: ${baja_actual['costo_total']:.2f}")
                 if st.button("🗑️ Eliminar esta baja", key="btn_del_baja"):
                     _ = safe_query("DELETE FROM bajas_material WHERE id = %s", (baja_id_editar,))
-                    mostrar_feedback("advertencia", f"Baja {baja_id_editar} eliminada")
-            else:
-                st.info("👆 Selecciona un ID de baja para editar o eliminar")
-
+                    mostrar_feedback("advertencia", f"Baja {baja_id_editar} eliminada")        
+else:
+    st.info("👆 Selecciona un ID de baja para editar o eliminar")             
+            
     # --- VISUALIZACIÓN INVENTARIO ---
     inventario_df = read_df("SELECT * FROM inventario")
     bajas_df = read_df("SELECT * FROM bajas_material")
