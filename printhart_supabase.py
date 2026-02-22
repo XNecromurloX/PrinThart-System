@@ -764,7 +764,7 @@ elif menu == "Inventario":
                 baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
             
             col1, col2 = st.columns(2)
-            with col1:
+             with col1:
                 st.subheader("✏️ Editar baja")
                 st.info(f"📊 **Valores actuales:**\n\n"
                        f"• Material: {baja_actual['material']}\n\n"
@@ -799,7 +799,7 @@ elif menu == "Inventario":
                 if not hay_cambios:
                     st.caption("⚠️ Completa al menos un campo para habilitar el botón")
             
-            with col2:
+             with col2:
                 st.subheader("🗑️ Eliminar baja")
                 st.warning(f"⚠️ Vas a eliminar la baja de {baja_actual['material']}")
                 st.caption(f"Cantidad: {baja_actual['cantidad']} | Costo: ${baja_actual['costo_total']:.2f}")
