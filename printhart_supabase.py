@@ -593,8 +593,15 @@ elif menu == "Nuevo pedido":
     
     st.divider()
     
+    # Validar si puede guardar
+    puede_guardar = (
+        st.session_state.pedido_cliente.strip() != "" and
+        len(materiales_usados) > 0 and
+        precio_total_calculado > 0
+    )
+    
     # Botón para guardar (sin formulario)
-    if st.button("✅ Guardar pedido", type="primary", key="btn_guardar_pedido_v2"):
+    if st.button("✅ Guardar pedido", type="primary", key="btn_guardar_pedido_v2", disabled=not puede_guardar):
         errores = []
         if not st.session_state.pedido_cliente.strip():
             errores.append("- Cliente obligatorio")
@@ -641,6 +648,16 @@ elif menu == "Nuevo pedido":
                 
                 mostrar_feedback("exito", f"¡Pedido guardado con éxito! Total: ${precio_total_calculado:,.0f}")
                 st.rerun()
+    
+    # Mensaje si el botón está deshabilitado
+    if not puede_guardar:
+        mensajes_faltantes = []
+        if st.session_state.pedido_cliente.strip() == "":
+            mensajes_faltantes.append("• Ingresa el nombre del cliente")
+        if len(materiales_usados) == 0:
+            mensajes_faltantes.append("• Agrega al menos un material")
+        if mensajes_faltantes:
+            st.caption("⚠️ Para habilitar el botón:\n" + "\n".join(mensajes_faltantes))
 
 # ---------------------------------------------------------
 # INVENTARIO
@@ -685,17 +702,24 @@ elif menu == "Inventario":
         cant_baja = st.number_input("Cantidad a dar de baja:", min_value=1,
                                     max_value=stock_disponible,
                                     value=1, step=1, key='cant_baja')
-        motivo = st.text_input("Motivo (Ej: Daño, vencimiento, uso interno)", value="Daño", key='motivo_baja')
+        motivo = st.text_input("Motivo (Ej: Daño, vencimiento, uso interno)", value="", placeholder="Ingresa el motivo", key='motivo_baja')
         costo_unit = float(inventario_con_stock_baja[inventario_con_stock_baja['material'] == mat_baja]['precio_compra'].iloc[0])
         fecha_baja = date.today().isoformat()
-        if st.button("Registrar baja de material"):
-            safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s", (cant_baja, mat_baja))
+        
+        # Validar que haya motivo
+        puede_registrar = motivo.strip() != "" and cant_baja > 0
+        
+        if st.button("Registrar baja de material", disabled=not puede_registrar):
+            _ = safe_query("UPDATE inventario SET cantidad = cantidad - %s WHERE material = %s", (cant_baja, mat_baja))
             costo_total = costo_unit * cant_baja
-            safe_query(
+            _ = safe_query(
                 "INSERT INTO bajas_material (material, cantidad, fecha, motivo, costo_unitario, costo_total) VALUES (%s, %s, %s, %s, %s, %s)",
-                (mat_baja, cant_baja, fecha_baja, motivo, costo_unit, costo_total)
+                (mat_baja, cant_baja, fecha_baja, motivo.strip(), costo_unit, costo_total)
             )
-            mostrar_feedback("exito", f"Baja registrada: {cant_baja} de {mat_baja} por '{motivo}'")
+            mostrar_feedback("exito", f"Baja registrada: {cant_baja} de {mat_baja} por '{motivo.strip()}'")
+        
+        if not puede_registrar:
+            st.caption("⚠️ Completa el motivo para habilitar el botón")
     else:
         st.info("No hay materiales con stock disponible para dar de baja")
     
@@ -729,17 +753,23 @@ elif menu == "Inventario":
                     nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
                     st.caption(f"Costo total recalculado: ${nuevo_costo_total:,.2f}")
                 
-                if st.button("💾 Actualizar baja", key="btn_update_baja"):
+                # Validar que haya al menos un cambio
+                hay_cambios = (nuevo_motivo.strip() != "" or nueva_cantidad > 0)
+                
+                if st.button("💾 Actualizar baja", key="btn_update_baja", disabled=not hay_cambios):
                     # Solo actualizar campos que no estén vacíos o en 0
                     motivo_final = nuevo_motivo.strip() if nuevo_motivo.strip() else baja_actual['motivo']
                     cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(baja_actual['cantidad'])
                     costo_final = cantidad_final * float(baja_actual['costo_unitario'])
                     
-                    safe_query(
+                    _ = safe_query(
                         "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
                         (cantidad_final, motivo_final, costo_final, baja_id_editar)
                     )
                     mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
+                
+                if not hay_cambios:
+                    st.caption("⚠️ Completa al menos un campo para habilitar el botón")
             
             with col2:
                 st.subheader("🗑️ Eliminar baja")
