@@ -774,11 +774,11 @@ if baja_id_selec != "-- Selecciona ID --":
     
     baja_id_editar = int(baja_id_selec)
     baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
+    col1, col2 = st.columns(2)
             
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("✏️ Editar baja")
-                st.info(f"📊 **Valores actuales:**\n\n"
+    with col1:
+         st.subheader("✏️ Editar baja")
+         st.info(f"📊 **Valores actuales:**\n\n"
                        f"• Material: {baja_actual['material']}\n\n"
                        f"• Cantidad: {int(baja_actual['cantidad'])}\n\n"
                        f"• Motivo: {baja_actual['motivo']}\n\n"
