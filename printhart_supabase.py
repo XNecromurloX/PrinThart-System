@@ -282,12 +282,20 @@ df_entregas = read_df("SELECT * FROM pedidos WHERE estado = 'Entregado'")
 inventario_df = read_df("SELECT * FROM inventario")
 bajas_df = read_df("SELECT * FROM bajas_material")
 
-ingresos_totales = df_entregas['total'].sum() if not df_entregas.empty else 0
-cantidad_pedidos = len(df_entregas)
+# Asegurar que la columna pagado existe
+if not df_entregas.empty and 'pagado' not in df_entregas.columns:
+    df_entregas['pagado'] = False
+
+# FILTRAR SOLO PEDIDOS PAGADOS para calcular finanzas
+df_entregas_pagados = df_entregas[df_entregas['pagado'] == True] if not df_entregas.empty else df_entregas
+
+ingresos_totales = df_entregas_pagados['total'].sum() if not df_entregas_pagados.empty else 0
+cantidad_pedidos = len(df_entregas)  # Total de entregas (pagadas y no pagadas)
+cantidad_pagados = len(df_entregas_pagados)  # Solo pagadas
 
 costos_totales = 0
-if not df_entregas.empty and not inventario_df.empty:
-    for _, row in df_entregas.iterrows():
+if not df_entregas_pagados.empty and not inventario_df.empty:
+    for _, row in df_entregas_pagados.iterrows():
         materiales = json.loads(row['materiales_usados']) if row['materiales_usados'] else []
         for material in materiales:
             mat_name = material['material']
@@ -307,6 +315,7 @@ st.sidebar.caption(f"🗑️ Baja: ${gastos_baja:,.0f}")
 st.sidebar.caption(f"🔹 Ganancia: ${ganancia_neta:,.0f}")
 st.sidebar.caption(f"📈 Margen: {margen_ganancia:.1f}%")
 st.sidebar.caption(f"📦 Entregas: {cantidad_pedidos}")
+st.sidebar.caption(f"✅ Pagadas: {cantidad_pagados}")
 
 # --- BOTÓN DE AJUSTES EN ESQUINA SUPERIOR DERECHA ---
 col_ajustes1, col_ajustes2 = st.columns([6, 1])
@@ -418,12 +427,14 @@ if menu == "Entregas":
 
     st.divider()
     st.subheader("💰 Resumen Financiero de Entregas")
-    col1, col2, col3, col4, col5 = st.columns(5)
+    st.caption("💡 Los totales solo incluyen pedidos marcados como PAGADOS")
+    col1, col2, col3, col4, col5, col6 = st.columns(6)
     with col1: st.metric("Ingresos", f"${ingresos_totales:,.0f}")
     with col2: st.metric("Costos", f"${costos_totales:,.0f}")
     with col3: st.metric("Ganancia neta", f"${ganancia_neta:,.0f}")
     with col4: st.metric("Baja", f"${gastos_baja:,.0f}")
     with col5: st.metric("Entregas", f"{cantidad_pedidos}")
+    with col6: st.metric("✅ Pagadas", f"{cantidad_pagados}")
 
     if not bajas_df.empty:
         st.expander("🗑️ Ver bajas de inventario").dataframe(
@@ -759,9 +770,9 @@ elif menu == "Inventario":
             baja_id_selec = st.selectbox("Selecciona ID de baja para editar/eliminar:", 
                                          ids_bajas_opciones, key="baja_edit_select")
             
-        if baja_id_selec != "-- Selecciona ID --":
-            baja_id_editar = int(baja_id_selec)
-            baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
+            if baja_id_selec != "-- Selecciona ID --":
+                baja_id_editar = int(baja_id_selec)
+                baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
             
             col1, col2 = st.columns(2)
             with col1:
@@ -806,8 +817,8 @@ elif menu == "Inventario":
                 if st.button("🗑️ Eliminar esta baja", key="btn_del_baja"):
                     _ = safe_query("DELETE FROM bajas_material WHERE id = %s", (baja_id_editar,))
                     mostrar_feedback("advertencia", f"Baja {baja_id_editar} eliminada")
-        else:
-            st.info("👆 Selecciona un ID de baja para editar o eliminar")
+            else:
+                st.info("👆 Selecciona un ID de baja para editar o eliminar")
 
     # --- VISUALIZACIÓN INVENTARIO ---
     inventario_df = read_df("SELECT * FROM inventario")
