@@ -784,10 +784,10 @@ if baja_id_selec != "-- Selecciona ID --":
                        f"• Motivo: {baja_actual['motivo']}\n\n"
                        f"• Costo total: ${baja_actual['costo_total']:.2f}")
                 
-                st.caption("⚠️ Solo completa los campos que quieras cambiar")
-                nuevo_motivo = st.text_input("Nuevo motivo (dejar vacío para no cambiar):", value="", placeholder=baja_actual['motivo'], key="edit_motivo_baja")
-                nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar):", min_value=0, 
-                                                value=0, step=1, key="edit_cant_baja")
+         st.caption("⚠️ Solo completa los campos que quieras cambiar")
+         nuevo_motivo = st.text_input("Nuevo motivo (dejar vacío para no cambiar):", value="", placeholder=baja_actual['motivo'], key="edit_motivo_baja")
+         nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar):", min_value=0, 
+         value=0, step=1, key="edit_cant_baja")
                 
                 if nueva_cantidad > 0:
                     nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
