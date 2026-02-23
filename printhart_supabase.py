@@ -770,9 +770,9 @@ elif menu == "Inventario":
             baja_id_selec = st.selectbox("Selecciona ID de baja para editar/eliminar:", 
                                          ids_bajas_opciones, key="baja_edit_select")
             
-            if baja_id_selec != "-- Selecciona ID --":
-                baja_id_editar = int(baja_id_selec)
-                baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
+       if baja_id_selec != "-- Selecciona ID --":
+        baja_id_editar = int(baja_id_selec)
+        baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
             
             col1, col2 = st.columns(2)
             with col1:
@@ -817,8 +817,8 @@ elif menu == "Inventario":
                 if st.button("🗑️ Eliminar esta baja", key="btn_del_baja"):
                     _ = safe_query("DELETE FROM bajas_material WHERE id = %s", (baja_id_editar,))
                     mostrar_feedback("advertencia", f"Baja {baja_id_editar} eliminada")
-            else:
-                st.info("👆 Selecciona un ID de baja para editar o eliminar")
+       else:
+        st.info("👆 Selecciona un ID de baja para editar o eliminar")
 
     # --- VISUALIZACIÓN INVENTARIO ---
     inventario_df = read_df("SELECT * FROM inventario")
