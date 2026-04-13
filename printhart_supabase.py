@@ -115,16 +115,52 @@ if st.session_state.fondo_activo != "default":
 # --- CONEXIÓN BASE DE DATOS SUPABASE (PostgreSQL) ---
 @st.cache_resource
 def get_connection():
-    return psycopg2.connect(st.secrets["DATABASE_URL"], cursor_factory=RealDictCursor)
-
-conn = get_connection()
+    """Crea una nueva conexión a la base de datos"""
+    try:
+        return psycopg2.connect(
+            st.secrets["DATABASE_URL"], 
+            cursor_factory=RealDictCursor,
+            connect_timeout=10,
+            keepalives=1,
+            keepalives_idle=30,
+            keepalives_interval=10,
+            keepalives_count=5
+        )
+    except psycopg2.OperationalError as e:
+        st.error("""
+        ⚠️ **Error de conexión a la base de datos**
+        
+        Posibles causas:
+        1. 🛌 Supabase pausó tu base de datos por inactividad (plan gratuito)
+        2. 🔑 Credenciales expiradas
+        3. 🌐 Problemas de red
+        
+        **Solución:**
+        1. Ve a tu dashboard de Supabase: https://supabase.com/dashboard
+        2. Verifica que tu proyecto esté activo (no pausado)
+        3. Si está pausado, haz clic en "Resume" o "Restore"
+        4. Recarga esta página
+        """)
+        st.stop()
 
 def get_cursor():
+    """Obtiene un cursor, reconectando si es necesario"""
+    global conn
     try:
-        conn.isolation_level  # chequea si sigue viva
-    except Exception:
-        conn = get_connection()
-    return conn.cursor()
+        # Verificar si la conexión está viva
+        conn.isolation_level
+        return conn.cursor()
+    except (AttributeError, psycopg2.OperationalError, psycopg2.InterfaceError):
+        # Reconectar si la conexión falló
+        try:
+            st.cache_resource.clear()  # Limpiar cache
+            conn = get_connection()
+            return conn.cursor()
+        except Exception as e:
+            st.error(f"❌ No se pudo reconectar a la base de datos: {e}")
+            st.stop()
+
+conn = get_connection()
 
 # --- CREAR TABLAS SI NO EXISTEN ---
 def crear_tablas():
@@ -198,29 +234,42 @@ except:
 
 # --- FUNCIÓN LEER DATOS ---
 def read_df(query, params=None):
-    try:
-        cur = get_cursor()
-        if params:
-            cur.execute(query, params)
-        else:
-            cur.execute(query)
-        rows = cur.fetchall()
-        cur.close()
-        if rows:
-            return pd.DataFrame([dict(r) for r in rows])
-        else:
-            # Devolver DataFrame vacío con columnas correctas
-            cur2 = get_cursor()
+    """Lee datos y devuelve un DataFrame, con reconexión automática"""
+    global conn
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            cur = get_cursor()
             if params:
-                cur2.execute(query, params)
+                cur.execute(query, params)
             else:
-                cur2.execute(query)
-            cols = [desc[0] for desc in cur2.description]
-            cur2.close()
-            return pd.DataFrame(columns=cols)
-    except Exception as e:
-        st.error(f"Error leyendo datos: {e}")
-        return pd.DataFrame()
+                cur.execute(query)
+            rows = cur.fetchall()
+            cur.close()
+            if rows:
+                return pd.DataFrame([dict(r) for r in rows])
+            else:
+                # Devolver DataFrame vacío con columnas correctas
+                cur2 = get_cursor()
+                if params:
+                    cur2.execute(query, params)
+                else:
+                    cur2.execute(query)
+                cols = [desc[0] for desc in cur2.description] if cur2.description else []
+                cur2.close()
+                return pd.DataFrame(columns=cols)
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            # Error de conexión - intentar reconectar
+            if attempt < max_retries - 1:
+                st.cache_resource.clear()
+                conn = get_connection()
+                continue
+            else:
+                st.error(f"Error de conexión al leer datos: {e}")
+                return pd.DataFrame()
+        except Exception as e:
+            st.error(f"Error leyendo datos: {e}")
+            return pd.DataFrame()
 
 # --- FUNCIONES AUXILIARES ---
 def mostrar_feedback(tipo, mensaje, tiempo=2):
@@ -239,22 +288,42 @@ def mostrar_feedback(tipo, mensaje, tiempo=2):
         st.info(mensaje)
 
 def safe_query(query, params=None, many=False):
-    try:
-        cur = get_cursor()
-        if params:
-            if many:
-                cur.executemany(query, params)
+    """Ejecuta una query con manejo robusto de errores y reconexión"""
+    global conn
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            cur = get_cursor()
+            if params:
+                if many:
+                    cur.executemany(query, params)
+                else:
+                    cur.execute(query, params)
             else:
-                cur.execute(query, params)
-        else:
-            cur.execute(query)
-        conn.commit()
-        cur.close()
-        return True
-    except Exception as e:
-        conn.rollback()
-        mostrar_feedback("error", f"Ocurrió un error en la base de datos: {e}")
-        return False
+                cur.execute(query)
+            conn.commit()
+            cur.close()
+            return True
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            # Error de conexión - intentar reconectar
+            if attempt < max_retries - 1:
+                st.cache_resource.clear()
+                conn = get_connection()
+                continue
+            else:
+                try:
+                    conn.rollback()
+                except:
+                    pass
+                mostrar_feedback("error", f"Error de conexión a la base de datos: {e}")
+                return False
+        except Exception as e:
+            try:
+                conn.rollback()
+            except:
+                pass
+            mostrar_feedback("error", f"Ocurrió un error en la base de datos: {e}")
+            return False
 
 # --- ESTADOS ---
 lista_estados = ["Por confirmar", "Sin diseñar", "Diseños listos", "Listos para entregar"]
