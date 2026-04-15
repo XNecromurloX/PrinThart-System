@@ -284,8 +284,45 @@ def mostrar_feedback(tipo, mensaje, tiempo=2):
         st.rerun()
     elif tipo == "error":
         st.error(mensaje)
+        return ""  # Retornar string vacío en vez de None
     elif tipo == "info":
         st.info(mensaje)
+        return ""  # Retornar string vacío en vez de None
+    return ""  # Retornar string vacío por defecto
+
+def popover_ajustes(key_suffix):
+    """Muestra el popover de ajustes con keys únicas"""
+    with st.popover("⚙️", use_container_width=True):
+        st.markdown("### ⚙️ Ajustes")
+        fondo_opciones = {
+            "🔲 Por defecto": "default",
+            "🔵 Azul": "gradient_blue",
+            "🌅 Sunset": "gradient_sunset",
+            "🌊 Océano": "gradient_ocean",
+            "🌲 Bosque": "gradient_forest",
+            "💜 Morado": "gradient_purple",
+            "📊 Blur": "blur_stats",
+        }
+        
+        seleccion = st.selectbox("Elige un fondo:", list(fondo_opciones.keys()), key=f"fondo_select_{key_suffix}")
+        if st.button("✅ Aplicar", key=f"btn_fondo_{key_suffix}", use_container_width=True):
+            st.session_state.fondo_activo = fondo_opciones[seleccion]
+            st.session_state.fondo_url = ""
+            st.rerun()
+        
+        url_fondo = st.text_input("URL personalizada:", placeholder="https://...", key=f"url_{key_suffix}")
+        if st.button("🔗 Aplicar URL", key=f"btn_url_{key_suffix}", use_container_width=True):
+            if url_fondo.strip():
+                st.session_state.fondo_activo = "custom"
+                st.session_state.fondo_url = url_fondo.strip()
+                st.rerun()
+        
+        if st.button("🔄 Restablecer", key=f"btn_reset_{key_suffix}", use_container_width=True):
+            st.session_state.fondo_activo = "default"
+            st.session_state.fondo_url = ""
+            st.rerun()
+    return ""  # Retornar string vacío para evitar mostrar None
+
 
 def safe_query(query, params=None, many=False):
     """Ejecuta una query con manejo robusto de errores y reconexión"""
@@ -386,64 +423,18 @@ st.sidebar.caption(f"📈 Margen: {margen_ganancia:.1f}%")
 st.sidebar.caption(f"📦 Entregas: {cantidad_pedidos}")
 st.sidebar.caption(f"✅ Pagadas: {cantidad_pagados}")
 
-# --- BOTÓN DE AJUSTES EN ESQUINA SUPERIOR DERECHA ---
-col_ajustes1, col_ajustes2 = st.columns([6, 1])
-with col_ajustes2:
-    with st.popover("⚙️", use_container_width=True):
-        st.markdown("### ⚙️ Ajustes")
-        st.caption("Personaliza tu aplicación")
-        
-        st.markdown("#### 🎨 Fondos Predefinidos")
-        
-        fondo_opciones = {
-            "🔲 Por defecto": "default",
-            "🔵 Azul": "gradient_blue",
-            "🌅 Sunset": "gradient_sunset",
-            "🌊 Océano": "gradient_ocean",
-            "🌲 Bosque": "gradient_forest",
-            "💜 Morado": "gradient_purple",
-            "📊 Blur": "blur_stats",
-        }
-        
-        seleccion = st.selectbox(
-            "Elige un fondo:",
-            list(fondo_opciones.keys()),
-            key="fondo_select_popup"
-        )
-        
-        if st.button("✅ Aplicar", key="btn_aplicar_fondo_popup", use_container_width=True):
-            st.session_state.fondo_activo = fondo_opciones[seleccion]
-            st.session_state.fondo_url = ""
-            st.rerun()
-        
-        st.divider()
-        st.markdown("#### 🔗 Fondo desde URL")
-        
-        url_fondo = st.text_input(
-            "URL de imagen:",
-            placeholder="https://...",
-            key="input_url_popup",
-            label_visibility="collapsed"
-        )
-        
-        if st.button("🔗 Aplicar URL", key="btn_url_popup", use_container_width=True):
-            if url_fondo.strip():
-                st.session_state.fondo_activo = "custom"
-                st.session_state.fondo_url = url_fondo.strip()
-                st.rerun()
-        
-        st.divider()
-        
-        if st.button("🔄 Restablecer", key="btn_reset_popup", use_container_width=True):
-            st.session_state.fondo_activo = "default"
-            st.session_state.fondo_url = ""
-            st.rerun()
 
 # ---------------------------------------------------------
 # ENTREGAS
 # ---------------------------------------------------------
 if menu == "Entregas":
-    st.title("📋 Entregas Completadas")
+    # --- BOTÓN DE AJUSTES EN ESQUINA SUPERIOR DERECHA ---
+    col_titulo, col_ajustes = st.columns([6, 1])
+    with col_titulo:
+        st.title("📋 Entregas Completadas")
+    with col_ajustes:
+        _ = popover_ajustes("entregas")
+    
     df = read_df("SELECT * FROM pedidos WHERE estado = 'Entregado'")
     inventario_df = read_df("SELECT * FROM inventario")
     bajas_df = read_df("SELECT * FROM bajas_material")
@@ -506,8 +497,8 @@ if menu == "Entregas":
     with col6: st.metric("✅ Pagadas", f"{cantidad_pagados}")
 
     if not bajas_df.empty:
-        st.expander("🗑️ Ver bajas de inventario").dataframe(
-            bajas_df[['material', 'cantidad', 'fecha', 'motivo', 'costo_total']])
+        with st.expander("🗑️ Ver bajas de inventario"):
+            st.dataframe(bajas_df[['material', 'cantidad', 'fecha', 'motivo', 'costo_total']])
     if not df.empty:
         st.divider()
         
@@ -543,7 +534,13 @@ if menu == "Entregas":
 # NUEVO PEDIDO (SIN FORMULARIO - TIEMPO REAL)
 # ---------------------------------------------------------
 elif menu == "Nuevo pedido":
-    st.title("📝 Registrar nuevo pedido")
+    # --- BOTÓN DE AJUSTES EN ESQUINA SUPERIOR DERECHA ---
+    col_titulo, col_ajustes = st.columns([6, 1])
+    with col_titulo:
+        st.title("📝 Registrar nuevo pedido")
+    with col_ajustes:
+        _ = popover_ajustes("nuevo_pedido")
+    
     inventario_df = read_df("SELECT * FROM inventario")
     # Filtrar solo materiales con stock disponible
     inventario_con_stock = inventario_df[inventario_df['cantidad'] > 0] if not inventario_df.empty else inventario_df
