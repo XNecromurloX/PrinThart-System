@@ -284,11 +284,8 @@ def mostrar_feedback(tipo, mensaje, tiempo=2):
         st.rerun()
     elif tipo == "error":
         st.error(mensaje)
-        return ""  # Retornar string vacío en vez de None
     elif tipo == "info":
         st.info(mensaje)
-        return ""  # Retornar string vacío en vez de None
-    return ""  # Retornar string vacío por defecto
 
 def popover_ajustes(key_suffix):
     """Muestra el popover de ajustes con keys únicas"""
@@ -321,7 +318,6 @@ def popover_ajustes(key_suffix):
             st.session_state.fondo_activo = "default"
             st.session_state.fondo_url = ""
             st.rerun()
-    return ""  # Retornar string vacío para evitar mostrar None
 
 
 def safe_query(query, params=None, many=False):
@@ -433,7 +429,7 @@ if menu == "Entregas":
     with col_titulo:
         st.title("📋 Entregas Completadas")
     with col_ajustes:
-        _ = popover_ajustes("entregas")
+        popover_ajustes("entregas")
     
     df = read_df("SELECT * FROM pedidos WHERE estado = 'Entregado'")
     inventario_df = read_df("SELECT * FROM inventario")
@@ -539,7 +535,7 @@ elif menu == "Nuevo pedido":
     with col_titulo:
         st.title("📝 Registrar nuevo pedido")
     with col_ajustes:
-        _ = popover_ajustes("nuevo_pedido")
+        popover_ajustes("nuevo_pedido")
     
     inventario_df = read_df("SELECT * FROM inventario")
     # Filtrar solo materiales con stock disponible
@@ -960,7 +956,7 @@ elif menu == "Inventario":
             with st.form("frm_editar_material"):
                 st.caption("⚠️ Solo completa los campos que quieras cambiar")
                 nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_cant')
-                nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=50, key='upd_detalle')
+                nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=100, key='upd_det')
                 nuevo_precio_compra = st.number_input("Nuevo precio de compra (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pc')
                 nuevo_precio_venta = st.number_input("Nuevo precio de venta (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pv')
                 
