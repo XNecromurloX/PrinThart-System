@@ -5,7 +5,7 @@ from psycopg2.extras import RealDictCursor
 import json
 import time
 from datetime import date
-4fbfdhbdhdhhsdhfdshfdhffdh/heg1412425//3/´+{}_}
+
 # --- SISTEMA DE LOGIN ---
 USUARIOS = {
     "Ainaht": "Thak9900",
