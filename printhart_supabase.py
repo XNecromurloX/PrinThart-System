@@ -437,8 +437,8 @@ if menu == "Entregas":
     with col6: st.metric("✅ Pagadas", f"{cantidad_pagados}")
 
     if not bajas_df.empty:
-        st.expander("🗑️ Ver bajas de inventario").dataframe(
-            bajas_df[['material', 'cantidad', 'fecha', 'motivo', 'costo_total']])
+        with st.expander("🗑️ Ver bajas de inventario"):
+            st.dataframe(bajas_df[['material', 'cantidad', 'fecha', 'motivo', 'costo_total']])
     if not df.empty:
         st.divider()
         
@@ -773,50 +773,50 @@ elif menu == "Inventario":
             if baja_id_selec != "-- Selecciona ID --":
                 baja_id_editar = int(baja_id_selec)
                 baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("✏️ Editar baja")
-                st.info(f"📊 **Valores actuales:**\n\n"
-                       f"• Material: {baja_actual['material']}\n\n"
-                       f"• Cantidad: {int(baja_actual['cantidad'])}\n\n"
-                       f"• Motivo: {baja_actual['motivo']}\n\n"
-                       f"• Costo total: ${baja_actual['costo_total']:.2f}")
                 
-                st.caption("⚠️ Solo completa los campos que quieras cambiar")
-                nuevo_motivo = st.text_input("Nuevo motivo (dejar vacío para no cambiar):", value="", placeholder=baja_actual['motivo'], key="edit_motivo_baja")
-                nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar):", min_value=0, 
-                                                value=0, step=1, key="edit_cant_baja")
-                
-                if nueva_cantidad > 0:
-                    nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
-                    st.caption(f"Costo total recalculado: ${nuevo_costo_total:,.2f}")
-                
-                # Validar que haya al menos un cambio
-                hay_cambios = (nuevo_motivo.strip() != "" or nueva_cantidad > 0)
-                
-                if st.button("💾 Actualizar baja", key="btn_update_baja", disabled=not hay_cambios):
-                    # Solo actualizar campos que no estén vacíos o en 0
-                    motivo_final = nuevo_motivo.strip() if nuevo_motivo.strip() else baja_actual['motivo']
-                    cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(baja_actual['cantidad'])
-                    costo_final = cantidad_final * float(baja_actual['costo_unitario'])
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.subheader("✏️ Editar baja")
+                    st.info(f"📊 **Valores actuales:**\n\n"
+                           f"• Material: {baja_actual['material']}\n\n"
+                           f"• Cantidad: {int(baja_actual['cantidad'])}\n\n"
+                           f"• Motivo: {baja_actual['motivo']}\n\n"
+                           f"• Costo total: ${baja_actual['costo_total']:.2f}")
                     
-                    _ = safe_query(
-                        "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
-                        (cantidad_final, motivo_final, costo_final, baja_id_editar)
-                    )
-                    mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
+                    st.caption("⚠️ Solo completa los campos que quieras cambiar")
+                    nuevo_motivo = st.text_input("Nuevo motivo (dejar vacío para no cambiar):", value="", placeholder=baja_actual['motivo'], key="edit_motivo_baja")
+                    nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar):", min_value=0, 
+                                                    value=0, step=1, key="edit_cant_baja")
+                    
+                    if nueva_cantidad > 0:
+                        nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
+                        st.caption(f"Costo total recalculado: ${nuevo_costo_total:,.2f}")
+                    
+                    # Validar que haya al menos un cambio
+                    hay_cambios = (nuevo_motivo.strip() != "" or nueva_cantidad > 0)
+                    
+                    if st.button("💾 Actualizar baja", key="btn_update_baja", disabled=not hay_cambios):
+                        # Solo actualizar campos que no estén vacíos o en 0
+                        motivo_final = nuevo_motivo.strip() if nuevo_motivo.strip() else baja_actual['motivo']
+                        cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(baja_actual['cantidad'])
+                        costo_final = cantidad_final * float(baja_actual['costo_unitario'])
+                        
+                        _ = safe_query(
+                            "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
+                            (cantidad_final, motivo_final, costo_final, baja_id_editar)
+                        )
+                        mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
+                    
+                    if not hay_cambios:
+                        st.caption("⚠️ Completa al menos un campo para habilitar el botón")
                 
-                if not hay_cambios:
-                    st.caption("⚠️ Completa al menos un campo para habilitar el botón")
-            
-            with col2:
-                st.subheader("🗑️ Eliminar baja")
-                st.warning(f"⚠️ Vas a eliminar la baja de {baja_actual['material']}")
-                st.caption(f"Cantidad: {baja_actual['cantidad']} | Costo: ${baja_actual['costo_total']:.2f}")
-                if st.button("🗑️ Eliminar esta baja", key="btn_del_baja"):
-                    _ = safe_query("DELETE FROM bajas_material WHERE id = %s", (baja_id_editar,))
-                    mostrar_feedback("advertencia", f"Baja {baja_id_editar} eliminada")
+                with col2:
+                    st.subheader("🗑️ Eliminar baja")
+                    st.warning(f"⚠️ Vas a eliminar la baja de {baja_actual['material']}")
+                    st.caption(f"Cantidad: {baja_actual['cantidad']} | Costo: ${baja_actual['costo_total']:.2f}")
+                    if st.button("🗑️ Eliminar esta baja", key="btn_del_baja"):
+                        _ = safe_query("DELETE FROM bajas_material WHERE id = %s", (baja_id_editar,))
+                        mostrar_feedback("advertencia", f"Baja {baja_id_editar} eliminada")
             else:
                 st.info("👆 Selecciona un ID de baja para editar o eliminar")
 
@@ -894,7 +894,7 @@ elif menu == "Inventario":
             with st.form("frm_editar_material"):
                 st.caption("⚠️ Solo completa los campos que quieras cambiar")
                 nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_cant')
-                nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=50, key='upd_detalle')
+                nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=50, key='upd_det')
                 nuevo_precio_compra = st.number_input("Nuevo precio de compra (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pc')
                 nuevo_precio_venta = st.number_input("Nuevo precio de venta (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pv')
                 
