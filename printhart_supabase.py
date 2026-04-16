@@ -115,52 +115,16 @@ if st.session_state.fondo_activo != "default":
 # --- CONEXIÓN BASE DE DATOS SUPABASE (PostgreSQL) ---
 @st.cache_resource
 def get_connection():
-    """Crea una nueva conexión a la base de datos"""
-    try:
-        return psycopg2.connect(
-            st.secrets["DATABASE_URL"], 
-            cursor_factory=RealDictCursor,
-            connect_timeout=10,
-            keepalives=1,
-            keepalives_idle=30,
-            keepalives_interval=10,
-            keepalives_count=5
-        )
-    except psycopg2.OperationalError as e:
-        st.error("""
-        ⚠️ **Error de conexión a la base de datos**
-        
-        Posibles causas:
-        1. 🛌 Supabase pausó tu base de datos por inactividad (plan gratuito)
-        2. 🔑 Credenciales expiradas
-        3. 🌐 Problemas de red
-        
-        **Solución:**
-        1. Ve a tu dashboard de Supabase: https://supabase.com/dashboard
-        2. Verifica que tu proyecto esté activo (no pausado)
-        3. Si está pausado, haz clic en "Resume" o "Restore"
-        4. Recarga esta página
-        """)
-        st.stop()
-
-def get_cursor():
-    """Obtiene un cursor, reconectando si es necesario"""
-    global conn
-    try:
-        # Verificar si la conexión está viva
-        conn.isolation_level
-        return conn.cursor()
-    except (AttributeError, psycopg2.OperationalError, psycopg2.InterfaceError):
-        # Reconectar si la conexión falló
-        try:
-            st.cache_resource.clear()  # Limpiar cache
-            conn = get_connection()
-            return conn.cursor()
-        except Exception as e:
-            st.error(f"❌ No se pudo reconectar a la base de datos: {e}")
-            st.stop()
+    return psycopg2.connect(st.secrets["DATABASE_URL"], cursor_factory=RealDictCursor)
 
 conn = get_connection()
+
+def get_cursor():
+    try:
+        conn.isolation_level  # chequea si sigue viva
+    except Exception:
+        conn = get_connection()
+    return conn.cursor()
 
 # --- CREAR TABLAS SI NO EXISTEN ---
 def crear_tablas():
@@ -234,42 +198,29 @@ except:
 
 # --- FUNCIÓN LEER DATOS ---
 def read_df(query, params=None):
-    """Lee datos y devuelve un DataFrame, con reconexión automática"""
-    global conn
-    max_retries = 2
-    for attempt in range(max_retries):
-        try:
-            cur = get_cursor()
+    try:
+        cur = get_cursor()
+        if params:
+            cur.execute(query, params)
+        else:
+            cur.execute(query)
+        rows = cur.fetchall()
+        cur.close()
+        if rows:
+            return pd.DataFrame([dict(r) for r in rows])
+        else:
+            # Devolver DataFrame vacío con columnas correctas
+            cur2 = get_cursor()
             if params:
-                cur.execute(query, params)
+                cur2.execute(query, params)
             else:
-                cur.execute(query)
-            rows = cur.fetchall()
-            cur.close()
-            if rows:
-                return pd.DataFrame([dict(r) for r in rows])
-            else:
-                # Devolver DataFrame vacío con columnas correctas
-                cur2 = get_cursor()
-                if params:
-                    cur2.execute(query, params)
-                else:
-                    cur2.execute(query)
-                cols = [desc[0] for desc in cur2.description] if cur2.description else []
-                cur2.close()
-                return pd.DataFrame(columns=cols)
-        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
-            # Error de conexión - intentar reconectar
-            if attempt < max_retries - 1:
-                st.cache_resource.clear()
-                conn = get_connection()
-                continue
-            else:
-                st.error(f"Error de conexión al leer datos: {e}")
-                return pd.DataFrame()
-        except Exception as e:
-            st.error(f"Error leyendo datos: {e}")
-            return pd.DataFrame()
+                cur2.execute(query)
+            cols = [desc[0] for desc in cur2.description]
+            cur2.close()
+            return pd.DataFrame(columns=cols)
+    except Exception as e:
+        st.error(f"Error leyendo datos: {e}")
+        return pd.DataFrame()
 
 # --- FUNCIONES AUXILIARES ---
 def mostrar_feedback(tipo, mensaje, tiempo=2):
@@ -287,76 +238,23 @@ def mostrar_feedback(tipo, mensaje, tiempo=2):
     elif tipo == "info":
         st.info(mensaje)
 
-def popover_ajustes(key_suffix):
-    """Muestra el popover de ajustes con keys únicas"""
-    with st.popover("⚙️", use_container_width=True):
-        st.markdown("### ⚙️ Ajustes")
-        fondo_opciones = {
-            "🔲 Por defecto": "default",
-            "🔵 Azul": "gradient_blue",
-            "🌅 Sunset": "gradient_sunset",
-            "🌊 Océano": "gradient_ocean",
-            "🌲 Bosque": "gradient_forest",
-            "💜 Morado": "gradient_purple",
-            "📊 Blur": "blur_stats",
-        }
-        
-        seleccion = st.selectbox("Elige un fondo:", list(fondo_opciones.keys()), key=f"fondo_select_{key_suffix}")
-        if st.button("✅ Aplicar", key=f"btn_fondo_{key_suffix}", use_container_width=True):
-            st.session_state.fondo_activo = fondo_opciones[seleccion]
-            st.session_state.fondo_url = ""
-            st.rerun()
-        
-        url_fondo = st.text_input("URL personalizada:", placeholder="https://...", key=f"url_{key_suffix}")
-        if st.button("🔗 Aplicar URL", key=f"btn_url_{key_suffix}", use_container_width=True):
-            if url_fondo.strip():
-                st.session_state.fondo_activo = "custom"
-                st.session_state.fondo_url = url_fondo.strip()
-                st.rerun()
-        
-        if st.button("🔄 Restablecer", key=f"btn_reset_{key_suffix}", use_container_width=True):
-            st.session_state.fondo_activo = "default"
-            st.session_state.fondo_url = ""
-            st.rerun()
-
-
 def safe_query(query, params=None, many=False):
-    """Ejecuta una query con manejo robusto de errores y reconexión"""
-    global conn
-    max_retries = 2
-    for attempt in range(max_retries):
-        try:
-            cur = get_cursor()
-            if params:
-                if many:
-                    cur.executemany(query, params)
-                else:
-                    cur.execute(query, params)
+    try:
+        cur = get_cursor()
+        if params:
+            if many:
+                cur.executemany(query, params)
             else:
-                cur.execute(query)
-            conn.commit()
-            cur.close()
-            return True
-        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
-            # Error de conexión - intentar reconectar
-            if attempt < max_retries - 1:
-                st.cache_resource.clear()
-                conn = get_connection()
-                continue
-            else:
-                try:
-                    conn.rollback()
-                except:
-                    pass
-                mostrar_feedback("error", f"Error de conexión a la base de datos: {e}")
-                return False
-        except Exception as e:
-            try:
-                conn.rollback()
-            except:
-                pass
-            mostrar_feedback("error", f"Ocurrió un error en la base de datos: {e}")
-            return False
+                cur.execute(query, params)
+        else:
+            cur.execute(query)
+        conn.commit()
+        cur.close()
+        return True
+    except Exception as e:
+        conn.rollback()
+        mostrar_feedback("error", f"Ocurrió un error en la base de datos: {e}")
+        return False
 
 # --- ESTADOS ---
 lista_estados = ["Por confirmar", "Sin diseñar", "Diseños listos", "Listos para entregar"]
@@ -419,18 +317,64 @@ st.sidebar.caption(f"📈 Margen: {margen_ganancia:.1f}%")
 st.sidebar.caption(f"📦 Entregas: {cantidad_pedidos}")
 st.sidebar.caption(f"✅ Pagadas: {cantidad_pagados}")
 
+# --- BOTÓN DE AJUSTES EN ESQUINA SUPERIOR DERECHA ---
+col_ajustes1, col_ajustes2 = st.columns([6, 1])
+with col_ajustes2:
+    with st.popover("⚙️", use_container_width=True):
+        st.markdown("### ⚙️ Ajustes")
+        st.caption("Personaliza tu aplicación")
+        
+        st.markdown("#### 🎨 Fondos Predefinidos")
+        
+        fondo_opciones = {
+            "🔲 Por defecto": "default",
+            "🔵 Azul": "gradient_blue",
+            "🌅 Sunset": "gradient_sunset",
+            "🌊 Océano": "gradient_ocean",
+            "🌲 Bosque": "gradient_forest",
+            "💜 Morado": "gradient_purple",
+            "📊 Blur": "blur_stats",
+        }
+        
+        seleccion = st.selectbox(
+            "Elige un fondo:",
+            list(fondo_opciones.keys()),
+            key="fondo_select_popup"
+        )
+        
+        if st.button("✅ Aplicar", key="btn_aplicar_fondo_popup", use_container_width=True):
+            st.session_state.fondo_activo = fondo_opciones[seleccion]
+            st.session_state.fondo_url = ""
+            st.rerun()
+        
+        st.divider()
+        st.markdown("#### 🔗 Fondo desde URL")
+        
+        url_fondo = st.text_input(
+            "URL de imagen:",
+            placeholder="https://...",
+            key="input_url_popup",
+            label_visibility="collapsed"
+        )
+        
+        if st.button("🔗 Aplicar URL", key="btn_url_popup", use_container_width=True):
+            if url_fondo.strip():
+                st.session_state.fondo_activo = "custom"
+                st.session_state.fondo_url = url_fondo.strip()
+                st.rerun()
+        
+        st.divider()
+        
+        if st.button("🔄 Restablecer", key="btn_reset_popup", use_container_width=True):
+            st.session_state.fondo_activo = "default"
+            st.session_state.fondo_url = ""
+            st.rerun()
 
 # ---------------------------------------------------------
 # ENTREGAS
 # ---------------------------------------------------------
 if menu == "Entregas":
-    # --- BOTÓN DE AJUSTES EN ESQUINA SUPERIOR DERECHA ---
-    col_titulo, col_ajustes = st.columns([6, 1])
-    with col_titulo:
-        st.title("📋 Entregas Completadas")
-    with col_ajustes:
-        popover_ajustes("entregas")
-    
+    st.title("📋 Entregas Completadas")
     df = read_df("SELECT * FROM pedidos WHERE estado = 'Entregado'")
     inventario_df = read_df("SELECT * FROM inventario")
     bajas_df = read_df("SELECT * FROM bajas_material")
@@ -493,8 +437,8 @@ if menu == "Entregas":
     with col6: st.metric("✅ Pagadas", f"{cantidad_pagados}")
 
     if not bajas_df.empty:
-        with st.expander("🗑️ Ver bajas de inventario"):
-            st.dataframe(bajas_df[['material', 'cantidad', 'fecha', 'motivo', 'costo_total']])
+        st.expander("🗑️ Ver bajas de inventario").dataframe(
+            bajas_df[['material', 'cantidad', 'fecha', 'motivo', 'costo_total']])
     if not df.empty:
         st.divider()
         
@@ -530,13 +474,7 @@ if menu == "Entregas":
 # NUEVO PEDIDO (SIN FORMULARIO - TIEMPO REAL)
 # ---------------------------------------------------------
 elif menu == "Nuevo pedido":
-    # --- BOTÓN DE AJUSTES EN ESQUINA SUPERIOR DERECHA ---
-    col_titulo, col_ajustes = st.columns([6, 1])
-    with col_titulo:
-        st.title("📝 Registrar nuevo pedido")
-    with col_ajustes:
-        popover_ajustes("nuevo_pedido")
-    
+    st.title("📝 Registrar nuevo pedido")
     inventario_df = read_df("SELECT * FROM inventario")
     # Filtrar solo materiales con stock disponible
     inventario_con_stock = inventario_df[inventario_df['cantidad'] > 0] if not inventario_df.empty else inventario_df
@@ -835,50 +773,50 @@ elif menu == "Inventario":
             if baja_id_selec != "-- Selecciona ID --":
                 baja_id_editar = int(baja_id_selec)
                 baja_actual = bajas_df_edit[bajas_df_edit['id'] == baja_id_editar].iloc[0]
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("✏️ Editar baja")
+                st.info(f"📊 **Valores actuales:**\n\n"
+                       f"• Material: {baja_actual['material']}\n\n"
+                       f"• Cantidad: {int(baja_actual['cantidad'])}\n\n"
+                       f"• Motivo: {baja_actual['motivo']}\n\n"
+                       f"• Costo total: ${baja_actual['costo_total']:.2f}")
                 
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.subheader("✏️ Editar baja")
-                    st.info(f"📊 **Valores actuales:**\n\n"
-                           f"• Material: {baja_actual['material']}\n\n"
-                           f"• Cantidad: {int(baja_actual['cantidad'])}\n\n"
-                           f"• Motivo: {baja_actual['motivo']}\n\n"
-                           f"• Costo total: ${baja_actual['costo_total']:.2f}")
-                    
-                    st.caption("⚠️ Solo completa los campos que quieras cambiar")
-                    nuevo_motivo = st.text_input("Nuevo motivo (dejar vacío para no cambiar):", value="", placeholder=baja_actual['motivo'], key="edit_motivo_baja")
-                    nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar):", min_value=0, 
-                                                    value=0, step=1, key="edit_cant_baja")
-                    
-                    if nueva_cantidad > 0:
-                        nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
-                        st.caption(f"Costo total recalculado: ${nuevo_costo_total:,.2f}")
-                    
-                    # Validar que haya al menos un cambio
-                    hay_cambios = (nuevo_motivo.strip() != "" or nueva_cantidad > 0)
-                    
-                    if st.button("💾 Actualizar baja", key="btn_update_baja", disabled=not hay_cambios):
-                        # Solo actualizar campos que no estén vacíos o en 0
-                        motivo_final = nuevo_motivo.strip() if nuevo_motivo.strip() else baja_actual['motivo']
-                        cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(baja_actual['cantidad'])
-                        costo_final = cantidad_final * float(baja_actual['costo_unitario'])
-                        
-                        _ = safe_query(
-                            "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
-                            (cantidad_final, motivo_final, costo_final, baja_id_editar)
-                        )
-                        mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
-                    
-                    if not hay_cambios:
-                        st.caption("⚠️ Completa al menos un campo para habilitar el botón")
+                st.caption("⚠️ Solo completa los campos que quieras cambiar")
+                nuevo_motivo = st.text_input("Nuevo motivo (dejar vacío para no cambiar):", value="", placeholder=baja_actual['motivo'], key="edit_motivo_baja")
+                nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar):", min_value=0, 
+                                                value=0, step=1, key="edit_cant_baja")
                 
-                with col2:
-                    st.subheader("🗑️ Eliminar baja")
-                    st.warning(f"⚠️ Vas a eliminar la baja de {baja_actual['material']}")
-                    st.caption(f"Cantidad: {baja_actual['cantidad']} | Costo: ${baja_actual['costo_total']:.2f}")
-                    if st.button("🗑️ Eliminar esta baja", key="btn_del_baja"):
-                        _ = safe_query("DELETE FROM bajas_material WHERE id = %s", (baja_id_editar,))
-                        mostrar_feedback("advertencia", f"Baja {baja_id_editar} eliminada")
+                if nueva_cantidad > 0:
+                    nuevo_costo_total = nueva_cantidad * float(baja_actual['costo_unitario'])
+                    st.caption(f"Costo total recalculado: ${nuevo_costo_total:,.2f}")
+                
+                # Validar que haya al menos un cambio
+                hay_cambios = (nuevo_motivo.strip() != "" or nueva_cantidad > 0)
+                
+                if st.button("💾 Actualizar baja", key="btn_update_baja", disabled=not hay_cambios):
+                    # Solo actualizar campos que no estén vacíos o en 0
+                    motivo_final = nuevo_motivo.strip() if nuevo_motivo.strip() else baja_actual['motivo']
+                    cantidad_final = nueva_cantidad if nueva_cantidad > 0 else int(baja_actual['cantidad'])
+                    costo_final = cantidad_final * float(baja_actual['costo_unitario'])
+                    
+                    _ = safe_query(
+                        "UPDATE bajas_material SET cantidad = %s, motivo = %s, costo_total = %s WHERE id = %s",
+                        (cantidad_final, motivo_final, costo_final, baja_id_editar)
+                    )
+                    mostrar_feedback("exito", f"Baja {baja_id_editar} actualizada correctamente")
+                
+                if not hay_cambios:
+                    st.caption("⚠️ Completa al menos un campo para habilitar el botón")
+            
+            with col2:
+                st.subheader("🗑️ Eliminar baja")
+                st.warning(f"⚠️ Vas a eliminar la baja de {baja_actual['material']}")
+                st.caption(f"Cantidad: {baja_actual['cantidad']} | Costo: ${baja_actual['costo_total']:.2f}")
+                if st.button("🗑️ Eliminar esta baja", key="btn_del_baja"):
+                    _ = safe_query("DELETE FROM bajas_material WHERE id = %s", (baja_id_editar,))
+                    mostrar_feedback("advertencia", f"Baja {baja_id_editar} eliminada")
             else:
                 st.info("👆 Selecciona un ID de baja para editar o eliminar")
 
@@ -956,7 +894,7 @@ elif menu == "Inventario":
             with st.form("frm_editar_material"):
                 st.caption("⚠️ Solo completa los campos que quieras cambiar")
                 nueva_cantidad = st.number_input("Nueva cantidad (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_cant')
-                nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=100, key='upd_det')
+                nuevo_detalle = st.text_area("Nuevo detalle (dejar vacío para no cambiar)", value="", placeholder=mat_data['detalle'] if mat_data['detalle'] else "Ingresa nuevo detalle", height=50, key='upd_detalle')
                 nuevo_precio_compra = st.number_input("Nuevo precio de compra (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pc')
                 nuevo_precio_venta = st.number_input("Nuevo precio de venta (dejar en 0 para no cambiar)", min_value=0, value=0, step=1, format="%d", key='upd_pv')
                 
